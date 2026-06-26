@@ -1,0 +1,4904 @@
+package com.metafold.videodownloader;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.ContentValues;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
+import android.content.res.Configuration;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.MediaStore;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextUtils;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.view.Display;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowManager;
+import android.webkit.CookieManager;
+import android.webkit.MimeTypeMap;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.Switch;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.core.content.FileProvider;
+import androidx.documentfile.provider.DocumentFile;
+
+import com.yausername.youtubedl_android.YoutubeDL;
+import com.yausername.youtubedl_android.YoutubeDLException;
+import com.yausername.youtubedl_android.YoutubeDLRequest;
+import com.yausername.youtubedl_android.YoutubeDLResponse;
+import com.yausername.youtubedl_android.mapper.VideoFormat;
+import com.yausername.youtubedl_android.mapper.VideoInfo;
+
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.lang.reflect.Method;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.text.DateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.Deque;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import kotlin.Unit;
+import kotlin.jvm.functions.Function3;
+
+public final class MainActivity extends Activity {
+    private static final String PROCESS_ID = "metafold-video-download";
+    private static final String PLAYLIST_LIST_PROCESS_ID = PROCESS_ID + "-playlist-list";
+    private static final String PLAYLIST_ENTRY_PREFIX = "METAFOLD_ENTRY\t";
+    private static final String DOWNLOAD_FOLDER = "MetaFold Downloader";
+    private static final String PREFS_NAME = "downloader";
+    private static final String PREF_LAST_UPDATE = "last_ytdlp_update";
+    private static final String PREF_LANGUAGE = "language";
+    private static final String PREF_DEFAULT_RESOLUTION = "default_resolution";
+    private static final String PREF_POPUP_RESOLUTION = "popup_resolution";
+    private static final String PREF_LIMIT_MOBILE_RESOLUTION = "limit_mobile_resolution";
+    private static final String PREF_SHOW_HIGH_RESOLUTION = "show_high_resolution";
+    private static final String PREF_VIDEO_FORMAT = "video_format";
+    private static final String PREF_AUDIO_FORMAT = "audio_format";
+    private static final String PREF_ORIGINAL_AUDIO = "original_audio";
+    private static final String PREF_DESCRIPTIVE_AUDIO = "descriptive_audio";
+    private static final String PREF_ASK_DOWNLOAD_LOCATION = "ask_download_location";
+    private static final String PREF_USE_SAF = "use_saf";
+    private static final String PREF_VIDEO_FOLDER_URI = "video_folder_uri";
+    private static final String PREF_AUDIO_FOLDER_URI = "audio_folder_uri";
+    private static final String PREF_FILENAME_CHARS = "filename_chars";
+    private static final String PREF_REPLACEMENT_CHAR = "replacement_char";
+    private static final String PREF_MAX_RETRIES = "max_retries";
+    private static final String PREF_PAUSE_METERED = "pause_metered";
+    private static final String PREF_LIMIT_QUEUE = "limit_queue";
+    private static final String PREF_THEME = "theme";
+    private static final String PREF_NIGHT_THEME = "night_theme";
+    private static final String PREF_HIGH_REFRESH_RATE = "high_refresh_rate";
+    private static final String PREF_SHOW_QUEUE_TIP = "show_queue_tip";
+    private static final String PREF_TABLET_MODE = "tablet_mode";
+    private static final String PREF_LIST_MODE = "list_mode";
+    private static final String PREF_BOTTOM_TABS = "bottom_tabs";
+    private static final String PREF_WATCH_HISTORY = "watch_history";
+    private static final String PREF_RESUME_PLAYBACK = "resume_playback";
+    private static final String PREF_PLAYLIST_POSITIONS = "playlist_positions";
+    private static final String PREF_SEARCH_HISTORY = "search_history";
+    private static final String PREF_CONTENT_LANGUAGE = "content_language";
+    private static final String PREF_CONTENT_COUNTRY = "content_country";
+    private static final String PREF_HOME_CONTENT = "home_content";
+    private static final String PREF_CHANNEL_TABS = "channel_tabs";
+    private static final String PREF_SHOW_AGE_RESTRICTED = "show_age_restricted";
+    private static final String PREF_YOUTUBE_RESTRICTED_MODE = "youtube_restricted_mode";
+    private static final String PREF_SEARCH_SUGGESTIONS = "search_suggestions";
+    private static final String PREF_IMAGE_QUALITY = "image_quality";
+    private static final String PREF_SHOW_COMMENTS = "show_comments";
+    private static final String PREF_SHOW_NEXT_RELATED = "show_next_related";
+    private static final String PREF_SHOW_DESCRIPTION = "show_description";
+    private static final String PREF_SHOW_INFO_BOX = "show_info_box";
+    private static final String PREF_FEED_THRESHOLD = "feed_threshold";
+    private static final String PREF_DEDICATED_FEED = "dedicated_feed";
+    private static final String PREF_UPDATE_NOTIFICATIONS = "update_notifications";
+    private static final String PREF_PLAYER_NOTIFICATION = "player_notification";
+    private static final String PREF_NEW_FEED_NOTIFICATIONS = "new_feed_notifications";
+    private static final String PREF_NOTIFICATION_CHECK_FREQUENCY = "notification_check_frequency";
+    private static final String PREF_NOTIFICATION_NETWORK = "notification_network";
+    private static final String PREF_NOTIFICATION_CHANNELS = "notification_channels";
+    private static final String JOB_METADATA_FILE = "metafold-download.properties";
+    private static final int REQUEST_VIDEO_FOLDER = 4101;
+    private static final int REQUEST_AUDIO_FOLDER = 4102;
+    private static final String DONATION_RECIPIENT = "Ahmet Doğan";
+    private static final String DONATION_IBAN = "";
+    private static final String DONATION_NOTE = "MetaFold Downloader kahve desteği";
+    private static final String DONATION_PAYMENT_LINK = "";
+    private static final long BACK_EXIT_WINDOW_MS = 1800L;
+    private static final long UPDATE_INTERVAL_MS = 12L * 60L * 60L * 1000L;
+    private static final Pattern URL_PATTERN = Pattern.compile(
+            "((?:https?://|//)?(?:[a-z0-9-]+\\.)*(?:youtu\\.be|youtube\\.com|youtube-nocookie\\.com|instagram\\.com|facebook\\.com|fb\\.watch|tiktok\\.com|vm\\.tiktok\\.com|vt\\.tiktok\\.com|pinterest\\.com|pin\\.it|x\\.com|twitter\\.com)\\S*)",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final SocialPlatform[] PLATFORMS = new SocialPlatform[]{
+            new SocialPlatform("YouTube", "https://www.youtube.com/", R.drawable.ic_youtube, Color.rgb(220, 38, 38)),
+            new SocialPlatform("Facebook", "https://www.facebook.com/", R.drawable.ic_facebook, Color.rgb(24, 119, 242)),
+            new SocialPlatform("Instagram", "https://www.instagram.com/", R.drawable.ic_instagram, Color.rgb(225, 48, 108)),
+            new SocialPlatform("TikTok", "https://www.tiktok.com/", R.drawable.ic_tiktok, Color.rgb(0, 150, 136)),
+            new SocialPlatform("Pinterest", "https://www.pinterest.com/", R.drawable.ic_pinterest, Color.rgb(230, 0, 35)),
+            new SocialPlatform("X / Twitter", "https://x.com/", R.drawable.ic_x, Color.rgb(23, 32, 29))
+    };
+    private static final AppThemeOption[] APP_THEMES = new AppThemeOption[]{
+            new AppThemeOption("light", "Açık", "Light", "Temiz açık arayüz", "Clean light interface",
+                    Color.rgb(8, 127, 111), Color.rgb(244, 247, 244), Color.WHITE, Color.rgb(248, 250, 248),
+                    Color.rgb(222, 229, 225), Color.rgb(23, 32, 29), Color.rgb(96, 112, 106), Color.WHITE),
+            new AppThemeOption("dark", "Koyu", "Dark", "Gerçek koyu arayüz", "True dark interface",
+                    Color.rgb(76, 166, 150), Color.rgb(12, 16, 18), Color.rgb(24, 30, 33), Color.rgb(31, 39, 42),
+                    Color.rgb(54, 66, 70), Color.rgb(232, 239, 236), Color.rgb(158, 174, 168), Color.rgb(8, 14, 16))
+    };
+
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Object initLock = new Object();
+    private final List<Button> optionButtons = new ArrayList<>();
+    private final Deque<QueuedDownload> downloadQueue = new ArrayDeque<>();
+    private final List<File> displayedDownloads = new ArrayList<>();
+    private final Set<String> selectedDownloadPaths = new HashSet<>();
+    private final Map<String, PlaylistStatusRow> playlistStatusRows = new LinkedHashMap<>();
+    private final Set<Integer> skippedPlaylistIndexes = new HashSet<>();
+    private final Map<Integer, File> playlistDownloadedFiles = new LinkedHashMap<>();
+
+    private LinearLayout downloadPanel;
+    private LinearLayout browserPanel;
+    private LinearLayout downloadsPanel;
+    private LinearLayout settingsPanel;
+    private LinearLayout aboutPanel;
+    private FrameLayout drawerOverlay;
+    private LinearLayout drawerPanel;
+    private LinearLayout activePlatformCard;
+    private LinearLayout downloadsList;
+    private LinearLayout downloadsSelectionBar;
+    private LinearLayout playlistModeRow;
+    private LinearLayout playlistStatusPanel;
+    private LinearLayout playlistStatusList;
+    private LinearLayout optionList;
+    private LinearLayout lastDownloadSummary;
+    private EditText urlInput;
+    private EditText downloadSearchInput;
+    private Button analyzeButton;
+    private Button downloadButton;
+    private Button cancelButton;
+    private Button pasteButton;
+    private Button openButton;
+    private Button shareButton;
+    private Button updateButton;
+    private Button selectAllDownloadsButton;
+    private Button deleteSelectedDownloadsButton;
+    private Button browserDownloadButton;
+    private Switch playlistSwitch;
+    private ProgressBar progressBar;
+    private TextView statusView;
+    private TextView platformView;
+    private TextView outputView;
+    private TextView optionHeaderView;
+    private TextView playlistStatusTitle;
+    private TextView browserUrlView;
+    private TextView downloadSelectionStatus;
+    private ImageView activePlatformIcon;
+    private TextView activePlatformNameView;
+    private TextView activePlatformUrlView;
+    private WebView webView;
+
+    private boolean downloaderReady;
+    private boolean ffmpegReady;
+    private boolean downloading;
+    private boolean busy;
+    private boolean browserPageDownloadAvailable;
+    private boolean pendingAutoFetch;
+    private boolean downloadSelectionMode;
+    private boolean currentInfoPlaylistMode;
+    private boolean activePlaylistDownload;
+    private volatile boolean cancelRequested;
+    private volatile boolean skipCurrentRequested;
+    private int activePlaylistIndex;
+    private int activePlaylistTotal;
+    private int completedPlaylistCount;
+    private int failedPlaylistCount;
+    private String currentInfoUrl = "";
+    private String activePlaylistKey = "";
+    private String selectedLanguage = "tr";
+    private SocialPlatform activePlatform = PLATFORMS[0];
+    private DownloadOption selectedOption;
+    private File lastFile;
+    private Uri lastUri;
+    private String lastMimeType = "video/mp4";
+    private long lastBackPressedAt;
+    private boolean progressPulseRunning;
+
+    private final Function3<Float, Long, String, Unit> progressCallback = (progress, etaInSeconds, line) -> {
+        mainHandler.post(() -> {
+            if (progress != null && progress >= 0f) {
+                int percent = Math.min(100, Math.max(0, Math.round(progress)));
+                if (activePlaylistDownload) {
+                    updateActivePlaylistProgress(percent);
+                    if (activePlaylistTotal > 0) {
+                        int overall = Math.min(100, Math.max(0, Math.round(((completedPlaylistCount + (percent / 100f)) / activePlaylistTotal) * 100f)));
+                        progressBar.setIndeterminate(false);
+                        progressBar.setProgress(overall);
+                        setStatus("Playlist indiriliyor: " + completedPlaylistCount + "/" + activePlaylistTotal + " - video %" + percent, true);
+                        return;
+                    }
+                    if (percent >= 100) {
+                        progressBar.setIndeterminate(true);
+                        setStatus("Sıradaki video başlatılıyor...", true);
+                        return;
+                    }
+                }
+                progressBar.setIndeterminate(false);
+                progressBar.setProgress(percent);
+                setStatus(downloadProgressText(percent, etaInSeconds), true);
+            }
+        });
+        return Unit.INSTANCE;
+    };
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        enterFullscreen();
+        selectedLanguage = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_LANGUAGE, "tr");
+        setContentView(createContentView());
+        applyRefreshRatePreference();
+        setupWebView();
+        pendingAutoFetch = handleIncomingIntent(getIntent());
+        setBusy(true, "İndirme altyapısı kontrol ediliyor...");
+        executor.execute(() -> {
+            try {
+                ensureDownloaderReady();
+                UpdateResult updateResult = updateYoutubeDl(false);
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    setStatus(updateResult.message, true);
+                    if (pendingAutoFetch) {
+                        pendingAutoFetch = false;
+                        fetchFormatOptions(false);
+                    }
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    setStatus("Başlatma hatası.", false);
+                    outputView.setText(cleanError(error));
+                });
+            }
+        });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        boolean shouldFetch = handleIncomingIntent(intent);
+        if (shouldFetch && downloaderReady && !busy && !downloading) {
+            fetchFormatOptions(false);
+        } else if (shouldFetch) {
+            pendingAutoFetch = true;
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if ((requestCode == REQUEST_VIDEO_FOLDER || requestCode == REQUEST_AUDIO_FOLDER)
+                && resultCode == RESULT_OK
+                && data != null
+                && data.getData() != null) {
+            Uri uri = data.getData();
+            int flags = data.getFlags()
+                    & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            try {
+                getContentResolver().takePersistableUriPermission(uri, flags);
+            } catch (Exception ignored) {
+                // Some providers grant access without persistable permissions.
+            }
+            putString(requestCode == REQUEST_VIDEO_FOLDER ? PREF_VIDEO_FOLDER_URI : PREF_AUDIO_FOLDER_URI, uri.toString());
+            toast("İndirme klasörü seçildi");
+            if (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE) {
+                renderDownloadSettings(settingsPanel);
+            }
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            enterFullscreen();
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (drawerOverlay != null && drawerOverlay.getVisibility() == View.VISIBLE) {
+            closeDrawer();
+            return;
+        }
+        if (browserPanel != null && browserPanel.getVisibility() == View.VISIBLE && webView != null && webView.canGoBack()) {
+            webView.goBack();
+            return;
+        }
+        if (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE && isSettingsSubPage()) {
+            renderSettingsHome(settingsPanel);
+            return;
+        }
+        if ((browserPanel != null && browserPanel.getVisibility() == View.VISIBLE)
+                || (downloadsPanel != null && downloadsPanel.getVisibility() == View.VISIBLE)
+                || (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE)
+                || (aboutPanel != null && aboutPanel.getVisibility() == View.VISIBLE)) {
+            showDownloader();
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastBackPressedAt > BACK_EXIT_WINDOW_MS) {
+            lastBackPressedAt = now;
+            toast("Çıkmak için tekrar geri tuşuna basın");
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    @Override
+    protected void onDestroy() {
+        try {
+            YoutubeDL.getInstance().destroyProcessById(PROCESS_ID);
+        } catch (Exception ignored) {
+            // Process may already be stopped.
+        }
+        executor.shutdownNow();
+        super.onDestroy();
+    }
+
+    private void enterFullscreen() {
+        Window window = getWindow();
+        AppThemeOption theme = currentTheme();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            window.setStatusBarColor(theme.backgroundColor);
+            window.setNavigationBarColor(theme.backgroundColor);
+        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        window.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        );
+        applyRefreshRatePreference();
+    }
+
+    private void applyRefreshRatePreference() {
+        Window window = getWindow();
+        WindowManager.LayoutParams params = window.getAttributes();
+        if (!getBool(PREF_HIGH_REFRESH_RATE, true)) {
+            params.preferredRefreshRate = 0f;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                params.preferredDisplayModeId = 0;
+            }
+            window.setAttributes(params);
+            applyViewFrameRate(window.getDecorView(), 0f);
+            return;
+        }
+
+        RefreshMode refreshMode = bestRefreshMode();
+        if (refreshMode.rate <= 0f) {
+            return;
+        }
+
+        params.preferredRefreshRate = refreshMode.rate;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && refreshMode.modeId > 0) {
+            params.preferredDisplayModeId = refreshMode.modeId;
+        }
+        window.setAttributes(params);
+        applyViewFrameRate(window.getDecorView(), refreshMode.rate);
+    }
+
+    private RefreshMode bestRefreshMode() {
+        Display display = activityDisplay();
+        if (display == null) {
+            return new RefreshMode(0f, 0);
+        }
+
+        float bestRate = display.getRefreshRate();
+        int bestModeId = 0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Display.Mode currentMode = display.getMode();
+            Display.Mode bestMode = null;
+            Display.Mode fallbackMode = null;
+            Display.Mode[] modes = display.getSupportedModes();
+            if (modes != null) {
+                for (Display.Mode mode : modes) {
+                    if (mode == null) {
+                        continue;
+                    }
+                    if (fallbackMode == null || mode.getRefreshRate() > fallbackMode.getRefreshRate()) {
+                        fallbackMode = mode;
+                    }
+                    if (currentMode != null
+                            && mode.getPhysicalWidth() == currentMode.getPhysicalWidth()
+                            && mode.getPhysicalHeight() == currentMode.getPhysicalHeight()
+                            && (bestMode == null || mode.getRefreshRate() > bestMode.getRefreshRate())) {
+                        bestMode = mode;
+                    }
+                }
+            }
+            if (bestMode == null) {
+                bestMode = fallbackMode;
+            }
+            if (bestMode != null) {
+                bestRate = bestMode.getRefreshRate();
+                bestModeId = bestMode.getModeId();
+            }
+        }
+        return new RefreshMode(bestRate, bestModeId);
+    }
+
+    private Display activityDisplay() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return getDisplay();
+        }
+        WindowManager manager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        return manager == null ? null : manager.getDefaultDisplay();
+    }
+
+    private void applyViewFrameRate(View view, float frameRate) {
+        if (view == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return;
+        }
+        try {
+            Method method = View.class.getMethod("setFrameRate", float.class, int.class);
+            method.invoke(view, frameRate, 0);
+        } catch (Exception ignored) {
+            // Some vendor builds ignore this hint; the window refresh preference still applies.
+        }
+    }
+
+    private View createContentView() {
+        AppThemeOption theme = currentTheme();
+        int bg = theme.backgroundColor;
+        int text = theme.textColor;
+        int muted = theme.mutedColor;
+        int accent = theme.accentColor;
+
+        FrameLayout appFrame = new FrameLayout(this);
+        appFrame.setBackgroundColor(bg);
+
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setFillViewport(true);
+        scrollView.setBackgroundColor(bg);
+        appFrame.addView(scrollView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int sidePadding = dp(18);
+        int topPadding = dp(18);
+        int bottomPadding = dp(24);
+        root.setPadding(sidePadding, topPadding + topSafeInsetFallback(), sidePadding, bottomPadding);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+            root.setOnApplyWindowInsetsListener((view, insets) -> {
+                int safeTop = insets.getSystemWindowInsetTop();
+                int safeLeft = insets.getSystemWindowInsetLeft();
+                int safeRight = insets.getSystemWindowInsetRight();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && insets.getDisplayCutout() != null) {
+                    safeTop = Math.max(safeTop, insets.getDisplayCutout().getSafeInsetTop());
+                    safeLeft = Math.max(safeLeft, insets.getDisplayCutout().getSafeInsetLeft());
+                    safeRight = Math.max(safeRight, insets.getDisplayCutout().getSafeInsetRight());
+                }
+                view.setPadding(sidePadding + safeLeft, topPadding + safeTop, sidePadding + safeRight, bottomPadding);
+                return insets;
+            });
+            root.requestApplyInsets();
+        }
+        scrollView.addView(root, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT
+        ));
+
+        root.addView(createAppHeader(), matchWrap());
+
+        downloadPanel = new LinearLayout(this);
+        downloadPanel.setOrientation(LinearLayout.VERTICAL);
+        downloadPanel.setPadding(dp(14), dp(14), dp(14), dp(14));
+        downloadPanel.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+        LinearLayout.LayoutParams panelParams = matchWrap();
+        panelParams.topMargin = dp(12);
+        root.addView(downloadPanel, panelParams);
+
+        platformView = textView("Link modu", 13, muted, true);
+        downloadPanel.addView(platformView);
+
+        urlInput = new EditText(this);
+        urlInput.setHint(ui("Video linki"));
+        urlInput.setSingleLine(false);
+        urlInput.setMinLines(2);
+        urlInput.setMaxLines(4);
+        urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        urlInput.setTextColor(text);
+        urlInput.setHintTextColor(muted);
+        urlInput.setTextSize(15);
+        urlInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+        urlInput.setBackground(rounded(theme.surfaceAltColor, 8, theme.borderColor));
+        LinearLayout.LayoutParams inputParams = matchWrap();
+        inputParams.topMargin = dp(10);
+        downloadPanel.addView(urlInput, inputParams);
+
+        LinearLayout quickRow = new LinearLayout(this);
+        quickRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams quickParams = matchWrap();
+        quickParams.topMargin = dp(10);
+        downloadPanel.addView(quickRow, quickParams);
+
+        pasteButton = secondaryButton("Yapıştır");
+        pasteButton.setOnClickListener(v -> pasteFromClipboard());
+        quickRow.addView(pasteButton, rowWeight());
+
+        Button clearButton = secondaryButton("Temizle");
+        clearButton.setOnClickListener(v -> clearSelection());
+        LinearLayout.LayoutParams clearParams = rowWeight();
+        clearParams.leftMargin = dp(8);
+        quickRow.addView(clearButton, clearParams);
+
+        analyzeButton = secondaryButton("İndirme seçeneklerini getir");
+        analyzeButton.setOnClickListener(v -> fetchFormatOptions(false));
+        LinearLayout.LayoutParams analyzeParams = matchWrap();
+        analyzeParams.topMargin = dp(10);
+        downloadPanel.addView(analyzeButton, analyzeParams);
+
+        playlistModeRow = new LinearLayout(this);
+        playlistModeRow.setOrientation(LinearLayout.HORIZONTAL);
+        playlistModeRow.setGravity(Gravity.CENTER_VERTICAL);
+        playlistModeRow.setPadding(dp(10), dp(10), dp(10), dp(10));
+        playlistModeRow.setBackground(rounded(theme.surfaceAltColor, 8, theme.borderColor));
+        playlistModeRow.setVisibility(View.GONE);
+        LinearLayout playlistTexts = new LinearLayout(this);
+        playlistTexts.setOrientation(LinearLayout.VERTICAL);
+        playlistModeRow.addView(playlistTexts, rowTextParams());
+        TextView playlistTitle = textView("Tüm playlist'i indir", 15, text, true);
+        playlistTexts.addView(playlistTitle);
+        TextView playlistHint = textView("Listedeki tüm videoları seçilen formatla indir", 12, muted, false);
+        playlistHint.setPadding(0, dp(2), 0, 0);
+        playlistTexts.addView(playlistHint);
+        playlistSwitch = new Switch(this);
+        playlistSwitch.setChecked(false);
+        playlistSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> resetInfoForPlaylistToggle());
+        playlistModeRow.setOnClickListener(v -> playlistSwitch.setChecked(!playlistSwitch.isChecked()));
+        playlistModeRow.addView(playlistSwitch, new LinearLayout.LayoutParams(dp(74), LinearLayout.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams playlistParams = matchWrap();
+        playlistParams.topMargin = dp(10);
+        downloadPanel.addView(playlistModeRow, playlistParams);
+
+        optionHeaderView = textView("Kalite seçenekleri henüz alınmadı.", 13, muted, false);
+        optionHeaderView.setPadding(0, dp(12), 0, 0);
+        downloadPanel.addView(optionHeaderView);
+
+        optionList = new LinearLayout(this);
+        optionList.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams optionParams = matchWrap();
+        optionParams.topMargin = dp(8);
+        downloadPanel.addView(optionList, optionParams);
+
+        downloadButton = primaryButton("İndir", accent);
+        downloadButton.setOnClickListener(v -> startDownload());
+        LinearLayout.LayoutParams downloadParams = matchWrap();
+        downloadParams.topMargin = dp(12);
+        downloadPanel.addView(downloadButton, downloadParams);
+
+        cancelButton = primaryButton("İptal", Color.rgb(183, 89, 20));
+        cancelButton.setEnabled(false);
+        cancelButton.setOnClickListener(v -> cancelDownload());
+        LinearLayout.LayoutParams cancelParams = matchWrap();
+        cancelParams.topMargin = dp(8);
+        downloadPanel.addView(cancelButton, cancelParams);
+
+        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setMax(100);
+        progressBar.setProgress(0);
+        LinearLayout.LayoutParams progressParams = matchWrap();
+        progressParams.topMargin = dp(14);
+        downloadPanel.addView(progressBar, progressParams);
+
+        statusView = textView("Başlatılıyor...", 14, muted, false);
+        statusView.setPadding(0, dp(12), 0, 0);
+        downloadPanel.addView(statusView);
+
+        playlistStatusPanel = new LinearLayout(this);
+        playlistStatusPanel.setOrientation(LinearLayout.VERTICAL);
+        playlistStatusPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams playlistStatusParams = matchWrap();
+        playlistStatusParams.topMargin = dp(10);
+        downloadPanel.addView(playlistStatusPanel, playlistStatusParams);
+
+        playlistStatusTitle = textView("Playlist durumu", 13, text, true);
+        playlistStatusPanel.addView(playlistStatusTitle);
+
+        playlistStatusList = new LinearLayout(this);
+        playlistStatusList.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams playlistListParams = matchWrap();
+        playlistListParams.topMargin = dp(6);
+        playlistStatusPanel.addView(playlistStatusList, playlistListParams);
+
+        outputView = textView("", 13, muted, false);
+        outputView.setTextIsSelectable(true);
+        outputView.setPadding(0, dp(10), 0, 0);
+        downloadPanel.addView(outputView);
+
+        lastDownloadSummary = new LinearLayout(this);
+        lastDownloadSummary.setOrientation(LinearLayout.VERTICAL);
+        lastDownloadSummary.setVisibility(View.GONE);
+        LinearLayout.LayoutParams summaryParams = matchWrap();
+        summaryParams.topMargin = dp(10);
+        downloadPanel.addView(lastDownloadSummary, summaryParams);
+
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams actionParams = matchWrap();
+        actionParams.topMargin = dp(14);
+        downloadPanel.addView(actionRow, actionParams);
+
+        openButton = secondaryButton("Aç");
+        openButton.setEnabled(false);
+        openButton.setOnClickListener(v -> openLastFile());
+        actionRow.addView(openButton, rowWeight());
+
+        shareButton = secondaryButton("Paylaş");
+        shareButton.setEnabled(false);
+        shareButton.setOnClickListener(v -> shareLastFile());
+        LinearLayout.LayoutParams shareParams = rowWeight();
+        shareParams.leftMargin = dp(8);
+        actionRow.addView(shareButton, shareParams);
+
+        updateButton = secondaryButton("İndirme motorunu güncelle");
+        updateButton.setOnClickListener(v -> updateExtractor());
+        LinearLayout.LayoutParams updateParams = matchWrap();
+        updateParams.topMargin = dp(12);
+        downloadPanel.addView(updateButton, updateParams);
+
+        browserPanel = createBrowserPanel();
+        browserPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams browserParams = matchWrap();
+        browserParams.topMargin = dp(12);
+        root.addView(browserPanel, browserParams);
+
+        downloadsPanel = createDownloadsPanel();
+        downloadsPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams downloadsParams = matchWrap();
+        downloadsParams.topMargin = dp(12);
+        root.addView(downloadsPanel, downloadsParams);
+
+        settingsPanel = createSettingsPanel();
+        settingsPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams settingsParams = matchWrap();
+        settingsParams.topMargin = dp(12);
+        root.addView(settingsPanel, settingsParams);
+
+        aboutPanel = createAboutPanel();
+        aboutPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams aboutParams = matchWrap();
+        aboutParams.topMargin = dp(12);
+        root.addView(aboutPanel, aboutParams);
+
+        TextView footer = textView("Oturumlar WebView içinde kalır. Yalnızca size ait veya indirme yetkiniz olan içerikleri indirin.", 12, muted, false);
+        footer.setPadding(0, dp(14), 0, 0);
+        root.addView(footer);
+
+        drawerOverlay = createDrawerOverlay();
+        drawerOverlay.setVisibility(View.GONE);
+        appFrame.addView(drawerOverlay, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        return appFrame;
+    }
+
+    private View createAppHeader() {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(0, 0, 0, dp(16));
+
+        Button menuButton = secondaryButton("☰");
+        menuButton.setTextSize(22);
+        menuButton.setMinWidth(dp(52));
+        menuButton.setOnClickListener(v -> openDrawer());
+        header.addView(menuButton, new LinearLayout.LayoutParams(dp(54), dp(50)));
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1
+        );
+        titleParams.leftMargin = dp(12);
+        header.addView(titleBlock, titleParams);
+
+        TextView title = textView("MetaFold Downloader", 24, currentTheme().textColor, true);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        titleBlock.addView(title);
+
+        TextView subtitle = textView("Sosyal platformlar tek uygulamada", 13, currentTheme().mutedColor, false);
+        subtitle.setSingleLine(true);
+        subtitle.setEllipsize(TextUtils.TruncateAt.END);
+        titleBlock.addView(subtitle);
+
+        return header;
+    }
+
+    private void updatePlatformHeader() {
+        AppThemeOption theme = currentTheme();
+        if (activePlatformIcon != null) {
+            activePlatformIcon.setImageResource(R.drawable.ic_settings);
+            activePlatformIcon.setColorFilter(theme.accentColor);
+            activePlatformIcon.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+            activePlatformIcon.setPadding(dp(7), dp(7), dp(7), dp(7));
+        }
+        if (activePlatformNameView != null) {
+            activePlatformNameView.setText(ui("Temalar"));
+            activePlatformNameView.setTextColor(theme.accentColor);
+        }
+        if (activePlatformUrlView != null) {
+            activePlatformUrlView.setText(themeName(theme));
+        }
+        if (activePlatformCard != null) {
+            activePlatformCard.setBackground(rounded(softAccent(theme.accentColor), 8, theme.accentColor));
+        }
+        applyActivePlatformTheme();
+    }
+
+    private void applyActivePlatformTheme() {
+        int accent = activePlatform.accentColor;
+        if (downloadButton != null) {
+            setButtonColor(downloadButton, accent);
+        }
+        if (browserDownloadButton != null) {
+            setButtonColor(browserDownloadButton, accent);
+        }
+        if (platformView != null) {
+            platformView.setTextColor(accent);
+        }
+        if (progressBar != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            progressBar.getProgressDrawable().setTint(accent);
+            progressBar.getIndeterminateDrawable().setTint(accent);
+        }
+    }
+
+    private FrameLayout createDrawerOverlay() {
+        AppThemeOption theme = currentTheme();
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(Color.argb(130, 0, 0, 0));
+        overlay.setOnClickListener(v -> closeDrawer());
+
+        ScrollView drawerScroll = new ScrollView(this);
+        drawerScroll.setFillViewport(true);
+        drawerScroll.setClickable(true);
+        drawerScroll.setOnClickListener(v -> {
+            // Consume clicks inside the drawer.
+        });
+
+        int drawerWidth = Math.min(dp(328), getResources().getDisplayMetrics().widthPixels - dp(44));
+        FrameLayout.LayoutParams drawerParams = new FrameLayout.LayoutParams(
+                drawerWidth,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        );
+        drawerParams.gravity = Gravity.LEFT;
+        overlay.addView(drawerScroll, drawerParams);
+
+        drawerPanel = new LinearLayout(this);
+        drawerPanel.setOrientation(LinearLayout.VERTICAL);
+        drawerPanel.setPadding(dp(18), dp(22), dp(18), dp(18));
+        drawerPanel.setBackgroundColor(theme.surfaceColor);
+        drawerScroll.addView(drawerPanel, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT
+        ));
+
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        drawerPanel.addView(headerRow, matchWrap());
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        headerRow.addView(titleBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView title = textView("MetaFold", 24, theme.textColor, true);
+        titleBlock.addView(title);
+        TextView subtitle = textView("Downloader", 13, theme.mutedColor, false);
+        titleBlock.addView(subtitle);
+
+        Button close = secondaryButton("×");
+        close.setTextSize(22);
+        close.setOnClickListener(v -> closeDrawer());
+        headerRow.addView(close, new LinearLayout.LayoutParams(dp(46), dp(44)));
+
+        activePlatformCard = new LinearLayout(this);
+        activePlatformCard.setOrientation(LinearLayout.HORIZONTAL);
+        activePlatformCard.setGravity(Gravity.CENTER_VERTICAL);
+        activePlatformCard.setPadding(dp(12), dp(12), dp(12), dp(12));
+        activePlatformCard.setBackground(rounded(softAccent(theme.accentColor), 8, theme.accentColor));
+        activePlatformCard.setOnClickListener(v -> showThemeChooser());
+        LinearLayout.LayoutParams activeParams = matchWrap();
+        activeParams.topMargin = dp(18);
+        drawerPanel.addView(activePlatformCard, activeParams);
+
+        activePlatformIcon = new ImageView(this);
+        activePlatformCard.addView(activePlatformIcon, new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+        LinearLayout activeTexts = new LinearLayout(this);
+        activeTexts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams activeTextParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        activeTextParams.leftMargin = dp(12);
+        activePlatformCard.addView(activeTexts, activeTextParams);
+
+        activePlatformNameView = textView("", 17, theme.textColor, true);
+        activeTexts.addView(activePlatformNameView);
+        activePlatformUrlView = textView("", 12, theme.mutedColor, false);
+        activeTexts.addView(activePlatformUrlView);
+
+        addDrawerSection("Platformlar");
+        for (SocialPlatform platform : PLATFORMS) {
+            addDrawerItem(platform.name, "Akışı aç", platform.iconRes, () -> {
+                closeDrawer();
+                openPlatform(platform);
+            });
+        }
+
+        addDrawerSection("Menü");
+        addDrawerItem("Link ile indir", "Paylaşılan bağlantıdan seçenekleri getir", R.drawable.ic_link, () -> {
+            closeDrawer();
+            showDownloader();
+        });
+        addDrawerItem("Aktif platform akışı", "Seçili platformda gezin", R.drawable.ic_link, () -> {
+            closeDrawer();
+            openPlatform(activePlatform);
+        });
+        addDrawerItem("İndirilenler", "Dosyaları aç veya paylaş", R.drawable.ic_downloads, () -> {
+            closeDrawer();
+            showDownloads();
+        });
+        addDrawerItem("Ayarlar", "Kalite, dil, görünüm ve bildirimler", R.drawable.ic_settings, () -> {
+            closeDrawer();
+            showSettings();
+        });
+        addDrawerItem("Hakkında", "Ahmet Doğan ve MetaFold bilgileri", R.drawable.ic_about, () -> {
+            closeDrawer();
+            showAbout();
+        });
+
+        updatePlatformHeader();
+        return overlay;
+    }
+
+    private void openDrawer() {
+        if (drawerOverlay != null) {
+            drawerOverlay.animate().cancel();
+            if (drawerPanel != null) {
+                drawerPanel.animate().cancel();
+                int width = drawerPanel.getWidth() > 0 ? drawerPanel.getWidth() : Math.min(dp(328), getResources().getDisplayMetrics().widthPixels - dp(44));
+                drawerPanel.setTranslationX(-width);
+            }
+            drawerOverlay.setAlpha(0f);
+            drawerOverlay.setVisibility(View.VISIBLE);
+            drawerOverlay.bringToFront();
+            drawerOverlay.animate().alpha(1f).setDuration(180L).start();
+            if (drawerPanel != null) {
+                drawerPanel.animate().translationX(0f).setDuration(220L).start();
+            }
+        }
+    }
+
+    private void closeDrawer() {
+        if (drawerOverlay != null) {
+            drawerOverlay.animate().cancel();
+            if (drawerPanel != null) {
+                drawerPanel.animate().cancel();
+                int width = drawerPanel.getWidth() > 0 ? drawerPanel.getWidth() : Math.min(dp(328), getResources().getDisplayMetrics().widthPixels - dp(44));
+                drawerPanel.animate().translationX(-width).setDuration(180L).start();
+            }
+            drawerOverlay.animate()
+                    .alpha(0f)
+                    .setDuration(180L)
+                    .withEndAction(() -> {
+                        drawerOverlay.setVisibility(View.GONE);
+                        drawerOverlay.setAlpha(1f);
+                        if (drawerPanel != null) {
+                            drawerPanel.setTranslationX(0f);
+                        }
+                    })
+                    .start();
+        }
+    }
+
+    private void addDrawerSection(String title) {
+        TextView section = textView(title, 12, Color.rgb(96, 112, 106), true);
+        section.setPadding(0, dp(18), 0, dp(6));
+        drawerPanel.addView(section);
+    }
+
+    private void addDrawerItem(String title, String subtitle, int iconRes, Runnable action) {
+        AppThemeOption theme = currentTheme();
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10), dp(10), dp(10), dp(10));
+        row.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+        row.setOnClickListener(v -> action.run());
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        if (shouldTintGenericIcon(iconRes)) {
+            icon.setColorFilter(theme.mutedColor);
+        }
+        row.addView(icon, new LinearLayout.LayoutParams(dp(32), dp(32)));
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        textParams.leftMargin = dp(12);
+        row.addView(texts, textParams);
+
+        TextView name = textView(title, 15, Color.rgb(23, 32, 29), true);
+        texts.addView(name);
+
+        TextView detail = textView(subtitle, 12, Color.rgb(96, 112, 106), false);
+        detail.setSingleLine(true);
+        detail.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(detail);
+
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = dp(6);
+        drawerPanel.addView(row, params);
+    }
+
+    private void showPlatformChooser() {
+        String[] names = new String[PLATFORMS.length];
+        for (int i = 0; i < PLATFORMS.length; i++) {
+            names[i] = PLATFORMS[i].name;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(ui("Platform seç"))
+                .setItems(names, (dialog, which) -> openPlatform(PLATFORMS[which]))
+                .show();
+    }
+
+    private void showThemeChooser() {
+        String[] labels = new String[APP_THEMES.length];
+        int checked = 0;
+        String current = currentTheme().key;
+        for (int i = 0; i < APP_THEMES.length; i++) {
+            labels[i] = themeName(APP_THEMES[i]) + " - " + themeSubtitle(APP_THEMES[i]);
+            if (APP_THEMES[i].key.equals(current)) {
+                checked = i;
+            }
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(ui("Tema seç"))
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    putString(PREF_THEME, APP_THEMES[which].key);
+                    toast("Tema değiştirildi");
+                    dialog.dismiss();
+                    recreate();
+                })
+                .setNegativeButton(ui("Vazgeç"), null)
+                .show();
+    }
+
+    private View createPlatformTabs() {
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        scroll.addView(row, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT
+        ));
+
+        addNavItem(row, "Link", R.drawable.ic_link, () -> showDownloader());
+        addNavItem(row, "Akış", R.drawable.ic_link, () -> openPlatform(activePlatform));
+        addNavItem(row, "İndirilenler", R.drawable.ic_downloads, () -> showDownloads());
+        addNavItem(row, "Ayarlar", R.drawable.ic_settings, () -> showSettings());
+        addNavItem(row, "Hakkında", R.drawable.ic_about, () -> showAbout());
+        return scroll;
+    }
+
+    private LinearLayout createBrowserPanel() {
+        AppThemeOption theme = currentTheme();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(10), dp(10), dp(10), dp(10));
+        panel.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+
+        LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setOrientation(LinearLayout.HORIZONTAL);
+        panel.addView(toolbar, matchWrap());
+
+        Button backButton = secondaryButton("Geri");
+        backButton.setOnClickListener(v -> {
+            if (webView != null && webView.canGoBack()) {
+                webView.goBack();
+            }
+        });
+        toolbar.addView(backButton, rowWeight());
+
+        browserDownloadButton = primaryButton("Videoyu indir", Color.rgb(8, 127, 111));
+        browserDownloadButton.setEnabled(false);
+        browserDownloadButton.setOnClickListener(v -> useCurrentBrowserPage());
+        LinearLayout.LayoutParams currentParams = rowWeight();
+        currentParams.leftMargin = dp(8);
+        toolbar.addView(browserDownloadButton, currentParams);
+
+        browserUrlView = textView("", 12, Color.rgb(96, 112, 106), false);
+        browserUrlView.setSingleLine(true);
+        browserUrlView.setEllipsize(TextUtils.TruncateAt.END);
+        browserUrlView.setPadding(0, dp(10), 0, dp(8));
+        panel.addView(browserUrlView);
+
+        webView = new WebView(this);
+        panel.addView(webView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(560)
+        ));
+
+        return panel;
+    }
+
+    private LinearLayout createDownloadsPanel() {
+        AppThemeOption theme = currentTheme();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(14), dp(14), dp(14), dp(14));
+        panel.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+
+        TextView header = textView("İndirilenler", 21, Color.rgb(23, 32, 29), true);
+        panel.addView(header);
+
+        TextView path = textView("Dosyalar: Downloads/" + DOWNLOAD_FOLDER, 13, Color.rgb(96, 112, 106), false);
+        path.setPadding(0, dp(6), 0, dp(10));
+        panel.addView(path);
+
+        downloadSearchInput = new EditText(this);
+        downloadSearchInput.setHint(ui("İndirilenlerde ara"));
+        downloadSearchInput.setSingleLine(true);
+        downloadSearchInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        downloadSearchInput.setTextColor(theme.textColor);
+        downloadSearchInput.setHintTextColor(theme.mutedColor);
+        downloadSearchInput.setTextSize(14);
+        downloadSearchInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+        downloadSearchInput.setBackground(rounded(theme.surfaceAltColor, 8, theme.borderColor));
+        downloadSearchInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                clearDownloadSelection(false);
+                refreshDownloads();
+            }
+        });
+        panel.addView(downloadSearchInput, matchWrap());
+
+        Button refreshButton = secondaryButton("Listeyi yenile");
+        refreshButton.setOnClickListener(v -> refreshDownloads());
+        LinearLayout.LayoutParams refreshParams = matchWrap();
+        refreshParams.topMargin = dp(8);
+        panel.addView(refreshButton, refreshParams);
+
+        downloadsSelectionBar = new LinearLayout(this);
+        downloadsSelectionBar.setOrientation(LinearLayout.VERTICAL);
+        downloadsSelectionBar.setPadding(dp(10), dp(10), dp(10), dp(10));
+        downloadsSelectionBar.setBackground(rounded(theme.surfaceAltColor, 8, theme.borderColor));
+        downloadsSelectionBar.setVisibility(View.GONE);
+
+        downloadSelectionStatus = textView("Seçilen: 0", 13, Color.rgb(23, 32, 29), true);
+        downloadsSelectionBar.addView(downloadSelectionStatus);
+
+        LinearLayout selectionActions = new LinearLayout(this);
+        selectionActions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams selectionActionParams = matchWrap();
+        selectionActionParams.topMargin = dp(8);
+        downloadsSelectionBar.addView(selectionActions, selectionActionParams);
+
+        selectAllDownloadsButton = secondaryButton("Tümünü seç");
+        selectAllDownloadsButton.setOnClickListener(v -> toggleSelectAllVisibleDownloads());
+        selectionActions.addView(selectAllDownloadsButton, rowWeight());
+
+        deleteSelectedDownloadsButton = primaryButton("Sil", Color.rgb(198, 40, 40));
+        deleteSelectedDownloadsButton.setOnClickListener(v -> confirmDeleteSelectedDownloads());
+        LinearLayout.LayoutParams deleteParams = rowWeight();
+        deleteParams.leftMargin = dp(8);
+        selectionActions.addView(deleteSelectedDownloadsButton, deleteParams);
+
+        Button cancelSelectionButton = secondaryButton("Bitti");
+        cancelSelectionButton.setOnClickListener(v -> clearDownloadSelection(true));
+        LinearLayout.LayoutParams cancelSelectionParams = rowWeight();
+        cancelSelectionParams.leftMargin = dp(8);
+        selectionActions.addView(cancelSelectionButton, cancelSelectionParams);
+
+        LinearLayout.LayoutParams selectionParams = matchWrap();
+        selectionParams.topMargin = dp(8);
+        panel.addView(downloadsSelectionBar, selectionParams);
+
+        downloadsList = new LinearLayout(this);
+        downloadsList.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams listParams = matchWrap();
+        listParams.topMargin = dp(10);
+        panel.addView(downloadsList, listParams);
+
+        return panel;
+    }
+
+    private LinearLayout createSettingsPanel() {
+        AppThemeOption theme = currentTheme();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(14), dp(14), dp(14), dp(14));
+        panel.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+        renderSettingsHome(panel);
+        return panel;
+    }
+
+    private void renderSettingsHome(LinearLayout panel) {
+        panel.removeAllViews();
+        animateSettingsPanel(panel, false);
+        TextView header = textView("Ayarlar", 21, Color.rgb(23, 32, 29), true);
+        panel.addView(header);
+
+        addSettingsCategory(panel, "Video ve ses", "Varsayılan kalite, format, ses tercihleri", () -> renderVideoAudioSettings(panel));
+        addSettingsCategory(panel, "İndir", "Klasör, dosya adı, deneme ve kuyruk ayarları", () -> renderDownloadSettings(panel));
+        addSettingsCategory(panel, "Görünüm", "Tema, liste ve sekme tercihleri", () -> renderAppearanceSettings(panel));
+        addSettingsCategory(panel, "Veri ve önbellek", "Geçici dosyaları ve çerezleri temizle", () -> renderHistoryCacheSettings(panel));
+        addSettingsCategory(panel, "İçerik", "Dil ve platform içerik davranışı", () -> renderContentSettings(panel));
+        addSettingsCategory(panel, "Güncellemeler", "Yeni sürüm bildirimi ve elle denetleme", () -> renderUpdateSettings(panel));
+        addActionSetting(panel, "Tam ekranı tekrar uygula", "Bildirim ve gezinme çubuklarını yeniden gizle", () -> {
+            enterFullscreen();
+            toast("Tam ekran yenilendi");
+        });
+    }
+
+    private void renderVideoAudioSettings(LinearLayout panel) {
+        renderSettingsHeader(panel, "Video ve ses");
+        addChoiceSetting(panel, "Varsayılan çözünürlük", PREF_DEFAULT_RESOLUTION, "720p",
+                new String[]{"En iyi", "480p", "720p", "1080p", "2K", "4K"});
+        addSwitchSetting(panel, "Yüksek çözünürlükleri göster", "2K/4K seçeneklerini kalite listesinde göster", PREF_SHOW_HIGH_RESOLUTION, true);
+        addChoiceSetting(panel, "Varsayılan video biçimi", PREF_VIDEO_FORMAT, "MPEG-4",
+                new String[]{"MPEG-4", "WebM"});
+        addChoiceSetting(panel, "Varsayılan ses biçimi", PREF_AUDIO_FORMAT, "MP3",
+                new String[]{"MP3", "M4A", "Opus"});
+        addInfoSetting(panel, "Kalite sıralaması", "Seçenekler videonun en yüksek kalitesinden aşağı sıralanır");
+    }
+
+    private void renderDownloadSettings(LinearLayout panel) {
+        renderSettingsHeader(panel, "İndir");
+        addActionSetting(panel, "Video indirme klasörü", folderLabel(PREF_VIDEO_FOLDER_URI), () -> chooseDownloadFolder(REQUEST_VIDEO_FOLDER));
+        addActionSetting(panel, "Ses indirme klasörü", folderLabel(PREF_AUDIO_FOLDER_URI), () -> chooseDownloadFolder(REQUEST_AUDIO_FOLDER));
+        addChoiceSetting(panel, "Dosya adlarında izin verilen karakterler", PREF_FILENAME_CHARS, "Çoğu özel karakterler",
+                new String[]{"Çoğu özel karakterler", "Kısıtlı karakterler", "ASCII güvenli"});
+        addChoiceSetting(panel, "Değiştirme karakteri", PREF_REPLACEMENT_CHAR, "_",
+                new String[]{"_", "-", "."});
+        addChoiceSetting(panel, "Azami deneme sayısı", PREF_MAX_RETRIES, "10",
+                new String[]{"3", "5", "10", "20"});
+        addSwitchSetting(panel, "İndirme kuyruğu", "İndirme sürerken yeni seçimleri sıraya ekle", PREF_LIMIT_QUEUE, true);
+    }
+
+    private void renderAppearanceSettings(LinearLayout panel) {
+        renderSettingsHeader(panel, "Görünüm");
+        addChoiceSetting(panel, "Tema", PREF_THEME, APP_THEMES[0].key, themeKeys(), value -> {
+            putString(PREF_THEME, value);
+            toast("Tema değiştirildi");
+            recreate();
+        }, this::themeName);
+        addSwitchSetting(panel, "Yüksek yenileme hızı", "Ekran destekliyorsa 90/120 Hz modunu kullan", PREF_HIGH_REFRESH_RATE, true,
+                enabled -> applyRefreshRatePreference());
+        addInfoSetting(panel, "Platform renkleri", "Platform logoları ve indirilen kartları kendi marka rengiyle görünür");
+        addInfoSetting(panel, "Menü animasyonu", "Sol menü kayarak açılır ve kapanır");
+    }
+
+    private void renderHistoryCacheSettings(LinearLayout panel) {
+        renderSettingsHeader(panel, "Veri ve önbellek");
+        addActionSetting(panel, "Önbelleğe alınmış meta verileri sil", "Tüm geçici web ve video verilerini kaldır", () -> confirm(
+                "Önbelleği temizle",
+                "Geçici video ve web verileri silinsin mi?",
+                () -> {
+            deleteChildren(getCacheDir());
+            toast("Önbellek temizlendi");
+                }
+        ));
+        addActionSetting(panel, "Web oturum çerezlerini temizle", "Uygulama içi platform girişlerini sıfırla", () -> confirm(
+                "Çerezleri temizle",
+                "Platform girişleri ve oturum çerezleri silinsin mi?",
+                () -> {
+            CookieManager.getInstance().removeAllCookies(null);
+            CookieManager.getInstance().flush();
+            toast("Çerezler temizlendi");
+                }
+        ));
+    }
+
+    private void renderContentSettings(LinearLayout panel) {
+        renderSettingsHeader(panel, "İçerik");
+        addChoiceSetting(panel, "Uygulama dili", PREF_LANGUAGE, selectedLanguage,
+                new String[]{"tr", "en"}, value -> {
+                    selectedLanguage = value;
+                    putString(PREF_LANGUAGE, value);
+                    toast("Dil değiştirildi");
+                    recreate();
+                }, value -> "tr".equals(value) ? "Türkçe" : "English");
+        addActionSetting(panel, "Oturumlu içerik", "Seçili platformda giriş sayfasını aç", () -> openPlatform(activePlatform));
+        addActionSetting(panel, "Platform akışı", "Seçili platformu uygulama içinde aç", () -> openPlatform(activePlatform));
+    }
+
+    private void renderUpdateSettings(LinearLayout panel) {
+        renderSettingsHeader(panel, "Güncellemeler");
+        addSwitchSetting(panel, "Güncellemeler", "Yeni sürüm olduğunda uygulama güncellemesi için bildirim göster", PREF_UPDATE_NOTIFICATIONS, false);
+        addActionSetting(panel, "Güncellemeleri denetle", "Yeni sürümleri el ile denetleyin", () -> {
+            toast("Güncellemeler denetleniyor");
+            updateExtractor();
+        });
+        addInfoSetting(panel, "Uygulama sürümü", "MetaFold Downloader 3.9");
+        addInfoSetting(panel, "İndirme motoru sürümü", safeVersionName());
+    }
+
+    private void renderNotificationSettings(LinearLayout panel) {
+        renderSettingsHeader(panel, "Bildirimler");
+        addSwitchSetting(panel, "Oynatıcı bildirimi", "Oynatılan akış bildirimini yapılandır", PREF_PLAYER_NOTIFICATION, true);
+        addSwitchSetting(panel, "Yeni akış bildirimleri", "Aboneliklerden yeni akışlarla ilgili bildirim gönder", PREF_NEW_FEED_NOTIFICATIONS, false);
+        addChoiceSetting(panel, "Denetleme sıklığı", PREF_NOTIFICATION_CHECK_FREQUENCY, "4 saat",
+                new String[]{"1 saat", "4 saat", "12 saat", "24 saat"});
+        addChoiceSetting(panel, "Gerekli ağ bağlantısı", PREF_NOTIFICATION_NETWORK, "Yalnızca Wi-Fi",
+                new String[]{"Yalnızca Wi-Fi", "Herhangi bir ağ"});
+        addInfoSetting(panel, "Kanallar", getString(PREF_NOTIFICATION_CHANNELS, "0/0"));
+    }
+
+    private void renderSettingsHeader(LinearLayout panel, String title) {
+        panel.removeAllViews();
+        animateSettingsPanel(panel, true);
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        panel.addView(headerRow, matchWrap());
+
+        Button back = secondaryButton("<");
+        back.setMinWidth(dp(48));
+        back.setOnClickListener(v -> renderSettingsHome(panel));
+        headerRow.addView(back, new LinearLayout.LayoutParams(dp(48), dp(44)));
+
+        TextView header = textView(title, 21, Color.rgb(23, 32, 29), true);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1
+        );
+        titleParams.leftMargin = dp(10);
+        headerRow.addView(header, titleParams);
+    }
+
+    private void animateSettingsPanel(View panel, boolean forward) {
+        if (panel == null) {
+            return;
+        }
+        panel.animate().cancel();
+        panel.setAlpha(0f);
+        panel.setTranslationX(forward ? dp(22) : -dp(14));
+        panel.animate().alpha(1f).translationX(0f).setDuration(180L).start();
+    }
+
+    private void addSettingsCategory(LinearLayout panel, String title, String subtitle, Runnable action) {
+        LinearLayout row = settingBaseRow();
+        row.setOnClickListener(v -> action.run());
+        row.addView(settingTextBlock(title, subtitle), rowTextParams());
+
+        TextView arrow = textView(">", 22, Color.rgb(96, 112, 106), true);
+        arrow.setGravity(Gravity.CENTER);
+        row.addView(arrow, new LinearLayout.LayoutParams(dp(28), LinearLayout.LayoutParams.WRAP_CONTENT));
+        addSettingRow(panel, row);
+    }
+
+    private void addChoiceSetting(LinearLayout panel, String title, String key, String defaultValue, String[] values) {
+        addChoiceSetting(panel, title, key, defaultValue, values, value -> {
+            putString(key, value);
+            renderCurrentSettingsPage(panel, title);
+        }, value -> value);
+    }
+
+    private void addChoiceSetting(LinearLayout panel, String title, String key, String defaultValue, String[] values, SettingValueHandler handler, ValueLabelFormatter formatter) {
+        String current = getString(key, defaultValue);
+        LinearLayout row = settingBaseRow();
+        row.setOnClickListener(v -> {
+            String active = getString(key, defaultValue);
+            String[] labels = new String[values.length];
+            int checked = -1;
+            for (int i = 0; i < values.length; i++) {
+                labels[i] = ui(formatter.label(values[i]));
+                if (values[i].equals(active)) {
+                    checked = i;
+                }
+            }
+            new AlertDialog.Builder(this)
+                    .setTitle(ui(title))
+                    .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                        handler.onValue(values[which]);
+                        dialog.dismiss();
+                    })
+                    .setNegativeButton(ui("Vazgeç"), null)
+                    .show();
+        });
+        row.addView(settingTextBlock(title, formatter.label(current)), rowTextParams());
+
+        TextView value = textView(formatter.label(current), 13, currentTheme().accentColor, true);
+        value.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
+        row.addView(value, new LinearLayout.LayoutParams(dp(104), LinearLayout.LayoutParams.WRAP_CONTENT));
+        addSettingRow(panel, row);
+    }
+
+    private void addSwitchSetting(LinearLayout panel, String title, String subtitle, String key, boolean defaultValue) {
+        addSwitchSetting(panel, title, subtitle, key, defaultValue, null);
+    }
+
+    private void addSwitchSetting(LinearLayout panel, String title, String subtitle, String key, boolean defaultValue, SwitchValueHandler handler) {
+        LinearLayout row = settingBaseRow();
+        row.addView(settingTextBlock(title, subtitle), rowTextParams());
+
+        Switch toggle = new Switch(this);
+        toggle.setChecked(getBool(key, defaultValue));
+        toggle.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            putBool(key, isChecked);
+            if (handler != null) {
+                handler.onValue(isChecked);
+            }
+        });
+        row.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked()));
+        row.addView(toggle, new LinearLayout.LayoutParams(dp(74), LinearLayout.LayoutParams.WRAP_CONTENT));
+        addSettingRow(panel, row);
+    }
+
+    private void addActionSetting(LinearLayout panel, String title, String subtitle, Runnable action) {
+        LinearLayout row = settingBaseRow();
+        row.setOnClickListener(v -> action.run());
+        row.addView(settingTextBlock(title, subtitle), rowTextParams());
+        addSettingRow(panel, row);
+    }
+
+    private void addInfoSetting(LinearLayout panel, String title, String subtitle) {
+        LinearLayout row = settingBaseRow();
+        row.addView(settingTextBlock(title, subtitle), rowTextParams());
+        addSettingRow(panel, row);
+    }
+
+    private void addSectionLabel(LinearLayout panel, String title) {
+        TextView label = textView(title, 14, Color.rgb(23, 32, 29), true);
+        label.setPadding(0, dp(16), 0, dp(4));
+        panel.addView(label);
+    }
+
+    private LinearLayout settingBaseRow() {
+        AppThemeOption theme = currentTheme();
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10), dp(10), dp(10), dp(10));
+        row.setBackground(rounded(theme.surfaceAltColor, 8, theme.borderColor));
+        return row;
+    }
+
+    private LinearLayout settingTextBlock(String title, String subtitle) {
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+
+        TextView titleView = textView(title, 15, Color.rgb(23, 32, 29), false);
+        texts.addView(titleView);
+
+        if (!TextUtils.isEmpty(subtitle)) {
+            TextView subtitleView = textView(subtitle, 12, Color.rgb(96, 112, 106), false);
+            subtitleView.setPadding(0, dp(2), 0, 0);
+            texts.addView(subtitleView);
+        }
+        return texts;
+    }
+
+    private LinearLayout.LayoutParams rowTextParams() {
+        return new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+    }
+
+    private void addSettingRow(LinearLayout panel, View row) {
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = dp(8);
+        panel.addView(row, params);
+    }
+
+    private void renderCurrentSettingsPage(LinearLayout panel, String changedTitle) {
+        CharSequence header = "";
+        if (panel.getChildCount() > 0 && panel.getChildAt(0) instanceof LinearLayout) {
+            LinearLayout headerRow = (LinearLayout) panel.getChildAt(0);
+            if (headerRow.getChildCount() > 1 && headerRow.getChildAt(1) instanceof TextView) {
+                header = ((TextView) headerRow.getChildAt(1)).getText();
+            }
+        }
+        String page = String.valueOf(header);
+        if ("Video ve ses".equals(page)) {
+            renderVideoAudioSettings(panel);
+        } else if ("İndir".equals(page)) {
+            renderDownloadSettings(panel);
+        } else if ("Görünüm".equals(page)) {
+            renderAppearanceSettings(panel);
+        } else if ("Veri ve önbellek".equals(page)) {
+            renderHistoryCacheSettings(panel);
+        } else if ("İçerik".equals(page)) {
+            renderContentSettings(panel);
+        } else if ("Güncellemeler".equals(page)) {
+            renderUpdateSettings(panel);
+        } else if ("Bildirimler".equals(page)) {
+            renderNotificationSettings(panel);
+        } else {
+            renderSettingsHome(panel);
+        }
+    }
+
+    private String nextValue(String[] values, String current, String defaultValue) {
+        if (values.length == 0) {
+            return defaultValue;
+        }
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(current)) {
+                return values[(i + 1) % values.length];
+            }
+        }
+        return values[0];
+    }
+
+    private String getString(String key, String defaultValue) {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(key, defaultValue);
+    }
+
+    private boolean getBool(String key, boolean defaultValue) {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getBoolean(key, defaultValue);
+    }
+
+    private void putString(String key, String value) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(key, value).apply();
+    }
+
+    private void putBool(String key, boolean value) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putBoolean(key, value).apply();
+    }
+
+    private void deleteChildren(File directory) {
+        if (directory == null || !directory.isDirectory()) {
+            return;
+        }
+        File[] children = directory.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            if (child.isDirectory()) {
+                deleteChildren(child);
+            }
+            if (!child.delete()) {
+                child.deleteOnExit();
+            }
+        }
+    }
+
+    private LinearLayout createAboutPanel() {
+        AppThemeOption theme = currentTheme();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(14), dp(14), dp(14), dp(14));
+        panel.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+
+        TextView header = textView("Hakkında", 21, Color.rgb(23, 32, 29), true);
+        panel.addView(header);
+
+        TextView body = textView(
+                aboutBody(),
+                14,
+                Color.rgb(23, 32, 29),
+                false
+        );
+        body.setPadding(0, dp(10), 0, 0);
+        panel.addView(body);
+
+        TextView site = textView("www.metafold.net", 16, Color.rgb(8, 127, 111), true);
+        site.setPadding(0, dp(14), 0, 0);
+        site.setPaintFlags(site.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        site.setOnClickListener(v -> openWebsite("https://www.metafold.net"));
+        panel.addView(site);
+
+        Button coffee = primaryButton("Geliştiriciye kahve ısmarla", theme.accentColor);
+        coffee.setOnClickListener(v -> showDonationDialog());
+        LinearLayout.LayoutParams coffeeParams = matchWrap();
+        coffeeParams.topMargin = dp(14);
+        panel.addView(coffee, coffeeParams);
+
+        return panel;
+    }
+
+    private void showDonationDialog() {
+        String message = donationMessage();
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(ui("Geliştiriciye kahve ısmarla"))
+                .setMessage(message)
+                .setNegativeButton(ui("Vazgeç"), null);
+
+        if (!TextUtils.isEmpty(DONATION_IBAN)) {
+            builder.setPositiveButton(ui("IBAN kopyala"), (dialog, which) -> copyDonationIban());
+            builder.setNeutralButton(ui("Paylaş"), (dialog, which) -> shareDonationInfo());
+        } else {
+            builder.setPositiveButton(ui("Destek sayfasını aç"), (dialog, which) -> openWebsite("https://www.metafold.net"));
+        }
+        builder.show();
+    }
+
+    private String donationMessage() {
+        if (TextUtils.isEmpty(DONATION_IBAN)) {
+            return ui("IBAN bilgisi henüz eklenmedi. Destek hesabını bağlamak için geliştirici IBAN bilgisini eklemeli.");
+        }
+        if (isEnglish()) {
+            return "Recipient: " + DONATION_RECIPIENT + "\n" +
+                    "IBAN: " + DONATION_IBAN + "\n" +
+                    "Note: " + DONATION_NOTE + "\n\n" +
+                    "Tap copy, then open your banking app and paste the IBAN.";
+        }
+        return "Alıcı: " + DONATION_RECIPIENT + "\n" +
+                "IBAN: " + DONATION_IBAN + "\n" +
+                "Açıklama: " + DONATION_NOTE + "\n\n" +
+                "Kopyala'ya dokunup banka uygulamanızda IBAN alanına yapıştırabilirsiniz.";
+    }
+
+    private String donationTransferText() {
+        return "Alıcı: " + DONATION_RECIPIENT + "\nIBAN: " + DONATION_IBAN + "\nAçıklama: " + DONATION_NOTE;
+    }
+
+    private void copyDonationIban() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard == null || TextUtils.isEmpty(DONATION_IBAN)) {
+            toast("IBAN bilgisi yok");
+            return;
+        }
+        clipboard.setPrimaryClip(ClipData.newPlainText("MetaFold IBAN", DONATION_IBAN));
+        toast("IBAN kopyalandı");
+        openDonationPaymentLinkIfAvailable();
+    }
+
+    private void shareDonationInfo() {
+        if (TextUtils.isEmpty(DONATION_IBAN)) {
+            toast("IBAN bilgisi yok");
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TEXT, donationTransferText());
+        try {
+            startActivity(Intent.createChooser(intent, ui("Paylaş")));
+        } catch (Exception error) {
+            toast("Uygun uygulama bulunamadı.");
+        }
+    }
+
+    private void openDonationPaymentLinkIfAvailable() {
+        if (!TextUtils.isEmpty(DONATION_PAYMENT_LINK)) {
+            openWebsite(DONATION_PAYMENT_LINK);
+        }
+    }
+
+    private String aboutBody() {
+        if (isEnglish()) {
+            return "MetaFold Downloader is a social video download helper built for the MetaFold ecosystem.\n\n" +
+                    "Developer: Ahmet Doğan\n" +
+                    "Version: 3.9\n\n" +
+                    "The app is designed only for content you own or are authorized to download.";
+        }
+        return "MetaFold Downloader, MetaFold ekosistemi için geliştirilen sosyal video indirme yardımcısıdır.\n\n" +
+                "Geliştirici: Ahmet Doğan\n" +
+                "Sürüm: 3.9\n\n" +
+                "Uygulama yalnızca size ait veya indirme yetkiniz olan içerikler için tasarlanmıştır.";
+    }
+
+    private void setupWebView() {
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
+        settings.setUserAgentString(settings.getUserAgentString() + " MetaFoldDownloader/3.9");
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            cookieManager.setAcceptThirdPartyCookies(webView, true);
+        }
+
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return request != null && handleBrowserNavigation(view, request.getUrl());
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return handleBrowserNavigation(view, url == null ? null : Uri.parse(url));
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                updateBrowserUrl(url);
+            }
+        });
+    }
+
+    private boolean handleBrowserNavigation(WebView view, Uri uri) {
+        if (uri == null) {
+            return false;
+        }
+        String scheme = uri.getScheme();
+        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+            return false;
+        }
+
+        String fallback = firstNonEmpty(
+                safeQueryParameter(uri, "params_url"),
+                safeQueryParameter(uri, "url"),
+                safeQueryParameter(uri, "redirect_url")
+        );
+        if (!TextUtils.isEmpty(fallback)) {
+            String normalized = normalizeUrl(fallback);
+            if (!TextUtils.isEmpty(normalized)) {
+                view.loadUrl(normalized);
+            }
+        }
+        return true;
+    }
+
+    private String safeQueryParameter(Uri uri, String key) {
+        try {
+            return uri.getQueryParameter(key);
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private void openPlatform(SocialPlatform platform) {
+        activePlatform = platform;
+        updatePlatformHeader();
+        hidePanels();
+        platformView.setText(platform.name + " " + ui("paneli"));
+        browserPanel.setVisibility(View.VISIBLE);
+        updateBrowserUrl(platform.homeUrl);
+        webView.loadUrl(platform.homeUrl);
+    }
+
+    private void openPlatform(String label, String url) {
+        SocialPlatform platform = platformByName(label);
+        if (platform == null) {
+            platform = new SocialPlatform(label, url, R.drawable.ic_link, Color.rgb(8, 127, 111));
+        }
+        openPlatform(platform);
+    }
+
+    private void showDownloader() {
+        hidePanels();
+        downloadPanel.setVisibility(View.VISIBLE);
+        platformView.setText(ui("Link modu"));
+    }
+
+    private void showDownloads() {
+        hidePanels();
+        downloadsPanel.setVisibility(View.VISIBLE);
+        refreshDownloads();
+    }
+
+    private void showSettings() {
+        hidePanels();
+        settingsPanel.setVisibility(View.VISIBLE);
+        renderSettingsHome(settingsPanel);
+    }
+
+    private void showAbout() {
+        hidePanels();
+        aboutPanel.setVisibility(View.VISIBLE);
+    }
+
+    private void hidePanels() {
+        if (downloadPanel != null) {
+            downloadPanel.setVisibility(View.GONE);
+        }
+        if (browserPanel != null) {
+            browserPanel.setVisibility(View.GONE);
+        }
+        if (downloadsPanel != null) {
+            downloadsPanel.setVisibility(View.GONE);
+        }
+        if (settingsPanel != null) {
+            settingsPanel.setVisibility(View.GONE);
+        }
+        if (aboutPanel != null) {
+            aboutPanel.setVisibility(View.GONE);
+        }
+    }
+
+    private boolean isSettingsSubPage() {
+        return settingsPanel != null
+                && settingsPanel.getChildCount() > 0
+                && settingsPanel.getChildAt(0) instanceof LinearLayout;
+    }
+
+    private void updateBrowserUrl(String url) {
+        String safeUrl = url == null ? "" : url;
+        browserUrlView.setText(safeUrl);
+        browserPageDownloadAvailable = detectPlatform(normalizeUrl(safeUrl)) != null;
+        browserDownloadButton.setEnabled(browserPageDownloadAvailable && !busy && !downloading);
+    }
+
+    private void useCurrentBrowserPage() {
+        String url = webView.getUrl();
+        if (TextUtils.isEmpty(url)) {
+            toast("Önce video sayfasını açın");
+            return;
+        }
+        urlInput.setText(displayUrlForUi(url));
+        urlInput.setSelection(urlInput.length());
+        showDetectedPlatform(url);
+        showDownloader();
+        fetchFormatOptions(true);
+    }
+
+    private void refreshDownloads() {
+        if (downloadsList == null) {
+            return;
+        }
+        downloadsList.removeAllViews();
+        displayedDownloads.clear();
+
+        File root = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        File jobs = root == null ? null : new File(root, "jobs");
+        List<File> files = new ArrayList<>();
+        if (jobs != null && jobs.isDirectory()) {
+            collectCandidateFiles(jobs, files);
+        }
+        files.sort(Comparator.comparingLong(File::lastModified).reversed());
+
+        String query = downloadSearchInput == null ? "" : downloadSearchInput.getText().toString().trim();
+        DateFormat formatter = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale.getDefault());
+        for (File file : files) {
+            if (matchesDownloadSearch(file, formatter, query)) {
+                displayedDownloads.add(file);
+            }
+        }
+        pruneDownloadSelection(files);
+        updateDownloadSelectionBar();
+
+        if (displayedDownloads.isEmpty()) {
+            String message = files.isEmpty() ? "Henüz indirilen dosya yok." : "Aramaya uygun dosya bulunamadı.";
+            TextView empty = textView(message, 13, Color.rgb(96, 112, 106), false);
+            downloadsList.addView(empty);
+            return;
+        }
+
+        for (File file : displayedDownloads) {
+            downloadsList.addView(downloadCard(file, formatter));
+        }
+    }
+
+    private View downloadCard(File file, DateFormat formatter) {
+        SocialPlatform platform = platformByDownloadedFile(file);
+        int accent = platform == null ? Color.rgb(8, 127, 111) : platform.accentColor;
+        String platformName = platform == null ? "Dosya" : platform.name;
+        String optionLabel = downloadOptionByDownloadedFile(file);
+        boolean selected = selectedDownloadPaths.contains(downloadKey(file));
+        AppThemeOption theme = currentTheme();
+        int titleColor = selected ? readableOn(accent) : accent;
+        int detailColor = selected ? readableOn(accent) : theme.mutedColor;
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(12), dp(12), dp(12));
+        card.setBackground(rounded(selected ? accent : softAccent(accent), 8, accent));
+        card.setOnLongClickListener(v -> {
+            enterDownloadSelection(file);
+            return true;
+        });
+        card.setOnClickListener(v -> {
+            if (downloadSelectionMode) {
+                toggleDownloadSelection(file);
+            }
+        });
+
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(headerRow, matchWrap());
+
+        ImageView platformIcon = new ImageView(this);
+        platformIcon.setImageResource(platform == null ? R.drawable.ic_downloads : platform.iconRes);
+        if (platform == null) {
+            platformIcon.setColorFilter(theme.mutedColor);
+        }
+        platformIcon.setPadding(dp(4), dp(4), dp(4), dp(4));
+        platformIcon.setBackground(rounded(theme.surfaceAltColor, 8, accent));
+        headerRow.addView(platformIcon, new LinearLayout.LayoutParams(dp(46), dp(46)));
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        textParams.leftMargin = dp(12);
+        headerRow.addView(textBlock, textParams);
+
+        TextView name = textView(file.getName(), 14, titleColor, true);
+        name.setSingleLine(false);
+        textBlock.addView(name);
+
+        String meta = platformName
+                + (TextUtils.isEmpty(optionLabel) ? "" : "  |  " + optionLabel)
+                + "  |  " + readableSize(file.length())
+                + "  |  " + formatter.format(new Date(file.lastModified()));
+        TextView details = textView(meta, 12, detailColor, false);
+        details.setPadding(0, dp(4), 0, 0);
+        textBlock.addView(details);
+
+        if (downloadSelectionMode) {
+            CheckBox checkBox = new CheckBox(this);
+            checkBox.setChecked(selected);
+            checkBox.setOnClickListener(v -> toggleDownloadSelection(file));
+            headerRow.addView(checkBox, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        } else {
+            LinearLayout actions = new LinearLayout(this);
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams actionParams = matchWrap();
+            actionParams.topMargin = dp(10);
+            card.addView(actions, actionParams);
+
+            Button open = secondaryButton("Aç");
+            open.setOnClickListener(v -> openFile(file));
+            actions.addView(open, rowWeight());
+
+            Button share = secondaryButton("Paylaş");
+            share.setOnClickListener(v -> shareFile(file));
+            LinearLayout.LayoutParams shareParams = rowWeight();
+            shareParams.leftMargin = dp(8);
+            actions.addView(share, shareParams);
+        }
+
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = dp(8);
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private boolean matchesDownloadSearch(File file, DateFormat formatter, String query) {
+        if (TextUtils.isEmpty(query)) {
+            return true;
+        }
+        SocialPlatform platform = platformByDownloadedFile(file);
+        String platformName = platform == null ? "Dosya" : platform.name;
+        String optionLabel = downloadOptionByDownloadedFile(file);
+        String haystack = file.getName()
+                + " " + platformName
+                + " " + optionLabel
+                + " " + readableSize(file.length())
+                + " " + formatter.format(new Date(file.lastModified()));
+        return haystack.toLowerCase(Locale.getDefault()).contains(query.toLowerCase(Locale.getDefault()));
+    }
+
+    private void enterDownloadSelection(File file) {
+        downloadSelectionMode = true;
+        selectedDownloadPaths.add(downloadKey(file));
+        updateDownloadSelectionBar();
+        refreshDownloads();
+    }
+
+    private void toggleDownloadSelection(File file) {
+        String key = downloadKey(file);
+        if (selectedDownloadPaths.contains(key)) {
+            selectedDownloadPaths.remove(key);
+        } else {
+            selectedDownloadPaths.add(key);
+        }
+        updateDownloadSelectionBar();
+        refreshDownloads();
+    }
+
+    private void toggleSelectAllVisibleDownloads() {
+        if (displayedDownloads.isEmpty()) {
+            toast("Seçilecek dosya yok");
+            return;
+        }
+        downloadSelectionMode = true;
+        int visibleSelected = selectedVisibleDownloadCount();
+        if (visibleSelected == displayedDownloads.size()) {
+            for (File file : displayedDownloads) {
+                selectedDownloadPaths.remove(downloadKey(file));
+            }
+        } else {
+            for (File file : displayedDownloads) {
+                selectedDownloadPaths.add(downloadKey(file));
+            }
+        }
+        updateDownloadSelectionBar();
+        refreshDownloads();
+    }
+
+    private void clearDownloadSelection(boolean refresh) {
+        selectedDownloadPaths.clear();
+        downloadSelectionMode = false;
+        updateDownloadSelectionBar();
+        if (refresh) {
+            refreshDownloads();
+        }
+    }
+
+    private void updateDownloadSelectionBar() {
+        if (downloadsSelectionBar == null || downloadSelectionStatus == null) {
+            return;
+        }
+        downloadsSelectionBar.setVisibility(downloadSelectionMode ? View.VISIBLE : View.GONE);
+        int visibleSelected = selectedVisibleDownloadCount();
+        downloadSelectionStatus.setText(ui("Seçilen: " + visibleSelected + " / " + displayedDownloads.size()));
+        if (deleteSelectedDownloadsButton != null) {
+            deleteSelectedDownloadsButton.setEnabled(visibleSelected > 0);
+            deleteSelectedDownloadsButton.setText(ui(visibleSelected > 0 ? "Sil (" + visibleSelected + ")" : "Sil"));
+        }
+        if (selectAllDownloadsButton != null) {
+            boolean allVisibleSelected = !displayedDownloads.isEmpty() && visibleSelected == displayedDownloads.size();
+            selectAllDownloadsButton.setText(ui(allVisibleSelected ? "Seçimi kaldır" : "Tümünü seç"));
+            selectAllDownloadsButton.setEnabled(!displayedDownloads.isEmpty());
+        }
+    }
+
+    private int selectedVisibleDownloadCount() {
+        int count = 0;
+        for (File file : displayedDownloads) {
+            if (selectedDownloadPaths.contains(downloadKey(file))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private void pruneDownloadSelection(List<File> validFiles) {
+        if (selectedDownloadPaths.isEmpty()) {
+            return;
+        }
+        Set<String> validPaths = new HashSet<>();
+        for (File file : validFiles) {
+            validPaths.add(downloadKey(file));
+        }
+        selectedDownloadPaths.retainAll(validPaths);
+        if (selectedDownloadPaths.isEmpty() && !downloadSelectionMode) {
+            updateDownloadSelectionBar();
+        }
+    }
+
+    private void confirmDeleteSelectedDownloads() {
+        int count = selectedVisibleDownloadCount();
+        if (count <= 0) {
+            toast("Önce dosya seçin");
+            return;
+        }
+        confirm(
+                "Seçilenleri sil",
+                count + " indirme kaydı silinsin mi?",
+                this::deleteSelectedDownloads
+        );
+    }
+
+    private void deleteSelectedDownloads() {
+        Set<String> selected = new HashSet<>(selectedDownloadPaths);
+        Set<File> jobDirectories = new HashSet<>();
+        int deleted = 0;
+
+        for (File file : new ArrayList<>(displayedDownloads)) {
+            if (!selected.contains(downloadKey(file))) {
+                continue;
+            }
+            File jobDirectory = jobDirectoryFor(file);
+            if (jobDirectory != null) {
+                jobDirectories.add(jobDirectory);
+            }
+            if (!file.exists() || file.delete()) {
+                deleted++;
+            } else {
+                file.deleteOnExit();
+            }
+            if (lastFile != null && sameFile(file, lastFile)) {
+                lastFile = null;
+                lastUri = null;
+                setFileActionsEnabled(false);
+                hideLastDownloadSummary();
+            }
+        }
+
+        for (File jobDirectory : jobDirectories) {
+            cleanupJobDirectory(jobDirectory);
+        }
+
+        clearDownloadSelection(false);
+        refreshDownloads();
+        toast(deleted + " dosya silindi");
+    }
+
+    private void cleanupJobDirectory(File jobDirectory) {
+        if (jobDirectory == null || !jobDirectory.isDirectory()) {
+            return;
+        }
+        List<File> remainingDownloads = new ArrayList<>();
+        collectCandidateFiles(jobDirectory, remainingDownloads);
+        if (!remainingDownloads.isEmpty()) {
+            return;
+        }
+        deleteChildren(jobDirectory);
+        if (!jobDirectory.delete()) {
+            jobDirectory.deleteOnExit();
+        }
+    }
+
+    private File jobDirectoryFor(File file) {
+        File root = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        File jobsRoot = root == null ? null : new File(root, "jobs");
+        if (file == null || jobsRoot == null) {
+            return null;
+        }
+        File current = file.getParentFile();
+        while (current != null) {
+            File parent = current.getParentFile();
+            if (parent != null && sameFile(parent, jobsRoot)) {
+                return current;
+            }
+            if (sameFile(current, jobsRoot)) {
+                return null;
+            }
+            current = parent;
+        }
+        return file.getParentFile();
+    }
+
+    private String downloadKey(File file) {
+        if (file == null) {
+            return "";
+        }
+        try {
+            return file.getCanonicalPath();
+        } catch (IOException ignored) {
+            return file.getAbsolutePath();
+        }
+    }
+
+    private static boolean sameFile(File first, File second) {
+        if (first == null || second == null) {
+            return false;
+        }
+        try {
+            return first.getCanonicalFile().equals(second.getCanonicalFile());
+        } catch (IOException ignored) {
+            return first.getAbsolutePath().equals(second.getAbsolutePath());
+        }
+    }
+
+    private void writeJobMetadata(File jobDir, String platformName, String url, DownloadOption option) {
+        if (jobDir == null) {
+            return;
+        }
+        Properties properties = new Properties();
+        properties.setProperty("platform", platformName == null ? "" : platformName);
+        properties.setProperty("url", url == null ? "" : url);
+        properties.setProperty("option", option == null ? "" : option.label);
+        try (OutputStream output = new FileOutputStream(new File(jobDir, JOB_METADATA_FILE))) {
+            properties.store(output, "MetaFold download metadata");
+        } catch (IOException ignored) {
+            // Metadata improves the downloads UI but should never block a download.
+        }
+    }
+
+    private SocialPlatform platformByDownloadedFile(File file) {
+        Properties properties = downloadMetadata(file);
+        if (properties == null) {
+            return null;
+        }
+        String platformName = properties.getProperty("platform", "");
+        SocialPlatform platform = platformByDetectedName(platformName);
+        if (platform != null) {
+            return platform;
+        }
+        return platformByDetectedName(detectPlatform(properties.getProperty("url", "")));
+    }
+
+    private String downloadOptionByDownloadedFile(File file) {
+        Properties properties = downloadMetadata(file);
+        return properties == null ? "" : properties.getProperty("option", "");
+    }
+
+    private Properties downloadMetadata(File file) {
+        File metadataFile = metadataFileForDownloadedFile(file);
+        if (metadataFile == null || !metadataFile.isFile()) {
+            return null;
+        }
+        Properties properties = new Properties();
+        try (InputStream input = new FileInputStream(metadataFile)) {
+            properties.load(input);
+            return properties;
+        } catch (IOException ignored) {
+            return null;
+        }
+    }
+
+    private File metadataFileForDownloadedFile(File file) {
+        if (file == null) {
+            return null;
+        }
+        File directory = file.getParentFile();
+        if (directory == null) {
+            return null;
+        }
+        return new File(directory, JOB_METADATA_FILE);
+    }
+
+    private void setLanguage(String language) {
+        selectedLanguage = language;
+        putString(PREF_LANGUAGE, language);
+        if (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE) {
+            renderSettingsHome(settingsPanel);
+        }
+        toast("Dil: " + languageName(language));
+    }
+
+    private void refreshLanguageStatus() {
+        if (settingsPanel == null) {
+            return;
+        }
+        View status = settingsPanel.findViewWithTag("language_status");
+        if (status instanceof TextView) {
+            ((TextView) status).setText(ui("Aktif dil: " + languageName(selectedLanguage)));
+        }
+    }
+
+    private void openWebsite(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception error) {
+            toast("Site açılamadı");
+        }
+    }
+
+    private void chooseDownloadFolder(int requestCode) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, requestCode);
+        } catch (Exception error) {
+            toast("Klasör seçici açılamadı");
+        }
+    }
+
+    private String folderLabel(String prefKey) {
+        String stored = getString(prefKey, "");
+        if (TextUtils.isEmpty(stored)) {
+            return "Downloads/" + DOWNLOAD_FOLDER;
+        }
+        try {
+            DocumentFile folder = DocumentFile.fromTreeUri(this, Uri.parse(stored));
+            String name = folder == null ? "" : folder.getName();
+            return TextUtils.isEmpty(name) ? "Seçili klasör" : name;
+        } catch (Exception ignored) {
+            return "Seçili klasör";
+        }
+    }
+
+    private void confirm(String title, String message, Runnable action) {
+        new AlertDialog.Builder(this)
+                .setTitle(ui(title))
+                .setMessage(ui(message))
+                .setPositiveButton(ui("Evet"), (dialog, which) -> action.run())
+                .setNegativeButton(ui("Vazgeç"), null)
+                .show();
+    }
+
+    private void fetchFormatOptions(boolean fromBrowser) {
+        String normalizedUrl = normalizeUrl(urlInput.getText().toString().trim());
+        String platform = detectPlatform(normalizedUrl);
+        if (TextUtils.isEmpty(normalizedUrl)) {
+            setStatus("Video linki gerekli.", false);
+            return;
+        }
+        if (platform == null) {
+            setStatus("Desteklenen platformlar: YouTube, Instagram, Facebook, TikTok, Pinterest, X.", false);
+            return;
+        }
+
+        currentInfoUrl = "";
+        currentInfoPlaylistMode = false;
+        selectedOption = null;
+        optionList.removeAllViews();
+        optionButtons.clear();
+        setFileActionsEnabled(false);
+        platformView.setText(platform);
+        SocialPlatform detectedPlatform = platformByDetectedName(platform);
+        if (detectedPlatform != null) {
+            activePlatform = detectedPlatform;
+            updatePlatformHeader();
+        }
+        optionHeaderView.setText(ui("Seçenekler hazırlanıyor..."));
+        outputView.setText("");
+
+        boolean playlistMode = isPlaylistModeEnabled(normalizedUrl);
+        if (playlistMode) {
+            showPlaylistFormatOptions(normalizedUrl, buildPlaylistDownloadOptions(), fromBrowser);
+            return;
+        }
+        showFastFormatOptions(normalizedUrl, buildPlaylistDownloadOptions(), fromBrowser);
+    }
+
+    private List<DownloadOption> buildDownloadOptions(VideoInfo info) {
+        TreeSet<Integer> heights = new TreeSet<>(Collections.reverseOrder());
+        boolean showHighResolution = getBool(PREF_SHOW_HIGH_RESOLUTION, true);
+        if (info.getHeight() > 0) {
+            if (showHighResolution || info.getHeight() <= 1080) {
+                heights.add(info.getHeight());
+            }
+        }
+        if (info.getFormats() != null) {
+            for (VideoFormat format : info.getFormats()) {
+                if (hasVideo(format) && format.getHeight() > 0) {
+                    if (showHighResolution || format.getHeight() <= 1080) {
+                        heights.add(format.getHeight());
+                    }
+                }
+            }
+        }
+
+        List<DownloadOption> options = new ArrayList<>();
+        if (heights.isEmpty()) {
+            options.add(DownloadOption.video("En iyi video", 0));
+        } else {
+            for (Integer height : heights) {
+                options.add(DownloadOption.video(labelForHeight(height), height));
+            }
+        }
+        String audioFormat = getString(PREF_AUDIO_FORMAT, "MP3");
+        options.add(DownloadOption.audio(audioFormat + " ses"));
+        return options;
+    }
+
+    private List<DownloadOption> buildPlaylistDownloadOptions() {
+        List<DownloadOption> options = new ArrayList<>();
+        boolean showHighResolution = getBool(PREF_SHOW_HIGH_RESOLUTION, true);
+        options.add(DownloadOption.video("En iyi video", 0));
+        if (showHighResolution) {
+            options.add(DownloadOption.video("4K (2160p)", 2160));
+            options.add(DownloadOption.video("2K (1440p)", 1440));
+        }
+        options.add(DownloadOption.video("1080p", 1080));
+        options.add(DownloadOption.video("720p", 720));
+        options.add(DownloadOption.video("480p", 480));
+        options.add(DownloadOption.video("360p", 360));
+        String audioFormat = getString(PREF_AUDIO_FORMAT, "MP3");
+        options.add(DownloadOption.audio(audioFormat + " ses"));
+        return options;
+    }
+
+    private void showPlaylistFormatOptions(String url, List<DownloadOption> options, boolean fromBrowser) {
+        currentInfoUrl = url;
+        currentInfoPlaylistMode = true;
+        optionList.removeAllViews();
+        optionButtons.clear();
+
+        optionHeaderView.setText(ui("Playlist modu: listedeki tüm videolar seçilen formatla indirilecek.\nİndirme türü seçin:"));
+        for (DownloadOption option : options) {
+            Button button = secondaryButton(option.label);
+            button.setTag(option);
+            button.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
+            button.setMinHeight(dp(46));
+            button.setOnClickListener(v -> selectOption(option));
+            LinearLayout.LayoutParams params = matchWrap();
+            params.topMargin = dp(6);
+            optionList.addView(button, params);
+            optionButtons.add(button);
+        }
+
+        if (!options.isEmpty()) {
+            selectOption(preferredOption(options));
+        }
+        setStatus(fromBrowser ? "Playlist sayfası hazır." : "Playlist seçenekleri hazır.", true);
+    }
+
+    private void showFastFormatOptions(String url, List<DownloadOption> options, boolean fromBrowser) {
+        currentInfoUrl = url;
+        currentInfoPlaylistMode = false;
+        optionList.removeAllViews();
+        optionButtons.clear();
+
+        optionHeaderView.setText(ui("Hızlı mod: kaliteyi seçin, indirme sırasında en uygun format alınacak."));
+        for (DownloadOption option : options) {
+            Button button = secondaryButton(option.label);
+            button.setTag(option);
+            button.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
+            button.setMinHeight(dp(46));
+            button.setOnClickListener(v -> selectOption(option));
+            LinearLayout.LayoutParams params = matchWrap();
+            params.topMargin = dp(6);
+            optionList.addView(button, params);
+            optionButtons.add(button);
+        }
+
+        if (!options.isEmpty()) {
+            selectOption(preferredOption(options));
+        }
+        setStatus(fromBrowser ? "Oturumlu sayfa hazır." : "Hızlı seçenekler hazır.", true);
+    }
+
+    private void showFormatOptions(String url, VideoInfo info, List<DownloadOption> options, boolean fromBrowser) {
+        currentInfoUrl = url;
+        currentInfoPlaylistMode = false;
+        optionList.removeAllViews();
+        optionButtons.clear();
+
+        String title = firstNonEmpty(info.getTitle(), info.getFulltitle(), "Video");
+        int maxHeight = maxHeight(options);
+        String maxLabel = maxHeight > 0 ? labelForHeight(maxHeight) : "bilinmiyor";
+        optionHeaderView.setText(ui("Başlık: " + trimForUi(title, 90) + "\nMaksimum kalite: " + maxLabel + "\nİndirme türü seçin:"));
+
+        for (DownloadOption option : options) {
+            Button button = secondaryButton(option.label);
+            button.setTag(option);
+            button.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
+            button.setMinHeight(dp(46));
+            button.setOnClickListener(v -> selectOption(option));
+            LinearLayout.LayoutParams params = matchWrap();
+            params.topMargin = dp(6);
+            optionList.addView(button, params);
+            optionButtons.add(button);
+        }
+
+        if (!options.isEmpty()) {
+            selectOption(preferredOption(options));
+        }
+        setStatus(fromBrowser ? "Oturumlu sayfa hazır." : "Seçenekler hazır.", true);
+    }
+
+    private DownloadOption preferredOption(List<DownloadOption> options) {
+        String preference = getString(PREF_DEFAULT_RESOLUTION, "720p");
+        int targetHeight = resolutionHeight(preference);
+        if ("En iyi".equals(preference) || targetHeight <= 0) {
+            return options.get(0);
+        }
+
+        DownloadOption fallback = options.get(0);
+        for (DownloadOption option : options) {
+            if (!option.audio && option.height <= targetHeight) {
+                return option;
+            }
+        }
+        return fallback;
+    }
+
+    private void selectOption(DownloadOption option) {
+        selectedOption = option;
+        AppThemeOption theme = currentTheme();
+        for (int i = 0; i < optionButtons.size(); i++) {
+            Button button = optionButtons.get(i);
+            boolean selected = button.getTag() == option;
+            if (selected) {
+                button.setTextColor(readableOn(activePlatform.accentColor));
+                button.setBackground(rounded(activePlatform.accentColor, 8, activePlatform.accentColor));
+            } else {
+                button.setTextColor(theme.textColor);
+                button.setBackground(rounded(theme.surfaceAltColor, 8, theme.borderColor));
+            }
+        }
+    }
+
+    private void startDownload() {
+        String normalizedUrl = normalizeUrl(urlInput.getText().toString().trim());
+        String platform = detectPlatform(normalizedUrl);
+
+        if (TextUtils.isEmpty(normalizedUrl)) {
+            setStatus("Video linki gerekli.", false);
+            return;
+        }
+        if (platform == null) {
+            setStatus("Desteklenen platformlar: YouTube, Instagram, Facebook, TikTok, Pinterest, X.", false);
+            return;
+        }
+        boolean playlistMode = isPlaylistModeEnabled(normalizedUrl);
+        if (selectedOption == null || !normalizedUrl.equals(currentInfoUrl) || playlistMode != currentInfoPlaylistMode) {
+            setStatus("Önce indirme seçeneklerini getirip kalite seçin.", false);
+            return;
+        }
+        if (selectedOption.audio && !ffmpegReady) {
+            setStatus("MP3 için FFmpeg hazır değil.", false);
+            return;
+        }
+        DownloadOption option = selectedOption;
+        if (downloading) {
+            if (getBool(PREF_LIMIT_QUEUE, true)) {
+                downloadQueue.addLast(new QueuedDownload(normalizedUrl, platform, option, playlistMode));
+                setStatus("Kuyruğa eklendi. Bekleyen: " + downloadQueue.size(), true);
+            } else {
+                toast("İndirme zaten çalışıyor");
+            }
+            return;
+        }
+        startDownloadNow(normalizedUrl, platform, option, playlistMode, false);
+    }
+
+    private void startDownloadNow(String normalizedUrl, String platform, DownloadOption option, boolean playlistMode, boolean fromQueue) {
+        SocialPlatform detectedPlatform = platformByDetectedName(platform);
+        if (detectedPlatform != null) {
+            activePlatform = detectedPlatform;
+            updatePlatformHeader();
+        }
+        platformView.setText(platform + " - " + option.label);
+        cancelRequested = false;
+        setDownloading(true);
+        progressBar.setProgress(0);
+        progressBar.setIndeterminate(true);
+        setStatus(fromQueue ? "Kuyruktaki indirme başlatılıyor..." : (playlistMode ? "Playlist listesi alınıyor..." : "İndirme başlatılıyor..."), true);
+        outputView.setText("");
+        activePlaylistDownload = playlistMode;
+        resetPlaylistStatus(playlistMode);
+        if (playlistMode && playlistStatusTitle != null) {
+            playlistStatusTitle.setText(ui("Playlist durumu") + " - " + ui("Liste alınıyor..."));
+        }
+        hideLastDownloadSummary();
+        lastFile = null;
+        lastUri = null;
+        setFileActionsEnabled(false);
+
+        executor.execute(() -> {
+            File jobDir = null;
+            try {
+                ensureDownloaderReady();
+
+                jobDir = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "jobs/" + System.currentTimeMillis());
+                if (!jobDir.mkdirs() && !jobDir.isDirectory()) {
+                    throw new IOException("İndirme klasörü oluşturulamadı: " + jobDir.getAbsolutePath());
+                }
+                writeJobMetadata(jobDir, platform, normalizedUrl, option);
+
+                File cookiesFile = buildCookieFile(normalizedUrl, jobDir);
+                if (playlistMode) {
+                    mainHandler.post(() -> setStatus("Playlist listesi alınıyor...", true));
+                    List<PlaylistEntry> entries = fetchPlaylistEntriesForDisplay(normalizedUrl, cookiesFile);
+                    if (entries.isEmpty()) {
+                        throw new IOException("Playlist listesi alınamadı. Bağlantıyı kontrol edip tekrar deneyin.");
+                    }
+                    mainHandler.post(() -> showPlaylistEntries(entries));
+                    PlaylistDownloadResult playlistResult = downloadPlaylistEntriesSequential(entries, normalizedUrl, option, jobDir, cookiesFile);
+                    if (playlistResult.downloadedFiles.isEmpty()) {
+                        throw new IOException("Playlist indirilemedi. Hiç dosya tamamlanmadı.");
+                    }
+
+                    File downloaded = playlistResult.downloadedFiles.get(0);
+                    lastFile = downloaded;
+                    lastUri = playlistResult.firstUri;
+                    lastMimeType = guessMimeType(downloaded);
+
+                    mainHandler.post(() -> {
+                        activePlaylistDownload = false;
+                        setDownloading(false);
+                        progressBar.setIndeterminate(false);
+                        progressBar.setProgress(100);
+                        updatePlaylistCounter(playlistResult.successCount, playlistResult.totalCount, playlistResult.failedCount);
+                        setStatus("Playlist tamamlandı.", playlistResult.failedCount == 0);
+                        setFileActionsEnabled(true);
+                        markPendingPlaylistRows("Atlandı", currentTheme().mutedColor);
+                        outputView.setText(ui("Seçim: " + option.label
+                                + "\nPlaylist: " + playlistResult.successCount + "/" + playlistResult.totalCount + " indirildi"
+                                + (playlistResult.failedCount > 0 ? "\nHata: " + playlistResult.failedCount : "")
+                                + "\nKlasör: " + outputFolderLabel(option.audio)));
+                        showLastDownloadSummary(platform, option, downloaded);
+                        if (downloadsPanel != null && downloadsPanel.getVisibility() == View.VISIBLE) {
+                            refreshDownloads();
+                        }
+                        startNextQueuedDownload();
+                    });
+                    return;
+                }
+                YoutubeDLRequest request = buildDownloadRequest(normalizedUrl, jobDir, option, cookiesFile, playlistMode);
+                YoutubeDL.getInstance().execute(request, PROCESS_ID, progressCallback);
+
+                List<File> downloadedFiles = findDownloadedFiles(jobDir);
+                if (downloadedFiles.isEmpty()) {
+                    throw new IOException("İndirilen dosya bulunamadı.");
+                }
+
+                File downloaded = downloadedFiles.get(0);
+                Uri publicUri = null;
+                for (File file : downloadedFiles) {
+                    Uri copied = copyToPublicDownloads(file, option.audio);
+                    if (publicUri == null) {
+                        publicUri = copied;
+                    }
+                }
+                String mimeType = guessMimeType(downloaded);
+
+                lastFile = downloaded;
+                lastUri = publicUri;
+                lastMimeType = mimeType;
+
+                mainHandler.post(() -> {
+                    activePlaylistDownload = false;
+                    setDownloading(false);
+                    progressBar.setIndeterminate(false);
+                    progressBar.setProgress(100);
+                    setStatus("İndirme tamamlandı.", true);
+                    setFileActionsEnabled(true);
+                    if (playlistMode) {
+                        markPendingPlaylistRows("Atlandı", currentTheme().mutedColor);
+                        outputView.setText(ui("Seçim: " + option.label + "\nPlaylist dosya sayısı: " + downloadedFiles.size() + "\nKlasör: " + outputFolderLabel(option.audio)));
+                    } else {
+                        outputView.setText(ui("Seçim: " + option.label + "\nDosya: " + outputFolderLabel(option.audio) + "/" + downloaded.getName()));
+                    }
+                    showLastDownloadSummary(platform, option, downloaded);
+                    if (downloadsPanel != null && downloadsPanel.getVisibility() == View.VISIBLE) {
+                        refreshDownloads();
+                    }
+                    startNextQueuedDownload();
+                });
+            } catch (Exception error) {
+                String displayError = cancelRequested ? "İndirme iptal edildi." : cleanError(error);
+                if (playlistMode && jobDir != null && !cancelRequested) {
+                    try {
+                        List<File> partialFiles = findDownloadedFiles(jobDir);
+                        if (!partialFiles.isEmpty()) {
+                            File downloaded = partialFiles.get(0);
+                            Uri publicUri = null;
+                            for (File file : partialFiles) {
+                                Uri copied = copyToPublicDownloads(file, option.audio);
+                                if (publicUri == null) {
+                                    publicUri = copied;
+                                }
+                            }
+                            String mimeType = guessMimeType(downloaded);
+                            lastFile = downloaded;
+                            lastUri = publicUri;
+                            lastMimeType = mimeType;
+                            final int partialCount = partialFiles.size();
+                            final String partialError = displayError;
+                            mainHandler.post(() -> {
+                                activePlaylistDownload = false;
+                                setDownloading(false);
+                                progressBar.setIndeterminate(false);
+                                progressBar.setProgress(100);
+                                setStatus("Playlist kısmen tamamlandı.", true);
+                                setFileActionsEnabled(true);
+                                markPendingPlaylistRows("Hata", Color.rgb(173, 52, 52));
+                                outputView.setText(ui("Seçim: " + option.label
+                                        + "\nİndirilen dosya sayısı: " + partialCount
+                                        + "\nKlasör: " + outputFolderLabel(option.audio)
+                                        + "\nUyarı: " + partialError));
+                                showLastDownloadSummary(platform, option, downloaded);
+                                if (downloadsPanel != null && downloadsPanel.getVisibility() == View.VISIBLE) {
+                                    refreshDownloads();
+                                }
+                                startNextQueuedDownload();
+                            });
+                            return;
+                        }
+                    } catch (Exception copyError) {
+                        displayError += "\n\nKısmi dosyalar kaydedilemedi: " + cleanError(copyError);
+                    }
+                }
+                final String errorMessage = displayError;
+                mainHandler.post(() -> {
+                    activePlaylistDownload = false;
+                    setDownloading(false);
+                    progressBar.setIndeterminate(false);
+                    setStatus("İndirme başarısız.", false);
+                    setFileActionsEnabled(false);
+                    markPendingPlaylistRows("Hata", Color.rgb(173, 52, 52));
+                    outputView.setText(ui(errorMessage));
+                    startNextQueuedDownload();
+                });
+            }
+        });
+    }
+
+    private void startNextQueuedDownload() {
+        if (downloading || downloadQueue.isEmpty()) {
+            return;
+        }
+        QueuedDownload next = downloadQueue.removeFirst();
+        currentInfoUrl = next.url;
+        selectedOption = next.option;
+        urlInput.setText(displayUrlForUi(next.url));
+        urlInput.setSelection(urlInput.length());
+        if (playlistSwitch != null) {
+            playlistSwitch.setChecked(next.playlistMode);
+        }
+        currentInfoPlaylistMode = next.playlistMode;
+        startDownloadNow(next.url, next.platform, next.option, next.playlistMode, true);
+    }
+
+    private YoutubeDLRequest buildDownloadRequest(String url, File jobDir, DownloadOption option, File cookiesFile, boolean playlistMode) {
+        return buildDownloadRequest(url, jobDir, option, cookiesFile, playlistMode, null);
+    }
+
+    private YoutubeDLRequest buildDownloadRequest(String url, File jobDir, DownloadOption option, File cookiesFile, boolean playlistMode, String outputTemplateOverride) {
+        YoutubeDLRequest request = new YoutubeDLRequest(url);
+        request.addOption("--no-mtime");
+        request.addOption(playlistMode ? "--yes-playlist" : "--no-playlist");
+        if (playlistMode) {
+            request.addOption("--ignore-errors");
+            request.addOption("--playlist-items", "1:");
+            request.addOption("--skip-playlist-after-errors", "999999");
+            request.addOption("--lazy-playlist");
+        }
+        request.addOption("--no-warnings");
+        request.addOption("--socket-timeout", playlistMode ? "10" : "20");
+        request.addOption("--concurrent-fragments", playlistMode ? "8" : "4");
+        request.addOption("--fragment-retries", playlistMode ? "2" : "5");
+        request.addOption("--file-access-retries", "2");
+        request.addOption("--extractor-retries", playlistMode ? "1" : "5");
+        request.addOption("--retries", playlistMode ? "1" : getString(PREF_MAX_RETRIES, "10"));
+        String filenamePolicy = getString(PREF_FILENAME_CHARS, "Çoğu özel karakterler");
+        if (!"Cogu ozel karakterler".equals(filenamePolicy) && !"Çoğu özel karakterler".equals(filenamePolicy)) {
+            request.addOption("--restrict-filenames");
+        }
+        request.addOption("--trim-filenames", "120");
+        String outputTemplate = outputTemplateOverride != null
+                ? outputTemplateOverride
+                : (playlistMode ? "%(playlist_index)s-%(title)s-%(id)s.%(ext)s" : "%(title)s-%(id)s.%(ext)s");
+        request.addOption("-o", new File(jobDir, outputTemplate).getAbsolutePath());
+        if (cookiesFile != null) {
+            request.addOption("--cookies", cookiesFile.getAbsolutePath());
+        }
+
+        if (option.audio) {
+            String audioFormat = getString(PREF_AUDIO_FORMAT, "MP3").toLowerCase(Locale.US);
+            if ("m4a".equals(audioFormat)) {
+                audioFormat = "m4a";
+            } else if ("opus".equals(audioFormat)) {
+                audioFormat = "opus";
+            } else {
+                audioFormat = "mp3";
+            }
+            request.addOption("-f", "bestaudio/best");
+            request.addOption("-x");
+            request.addOption("--audio-format", audioFormat);
+            request.addOption("--audio-quality", "0");
+            return request;
+        }
+
+        String videoFormat = "WebM".equals(getString(PREF_VIDEO_FORMAT, "MPEG-4")) ? "webm" : "mp4";
+        if (ffmpegReady) {
+            request.addOption("--merge-output-format", videoFormat);
+            if (option.height > 0) {
+                request.addOption("-f", videoFormatFilter(option.height, videoFormat));
+            } else {
+                request.addOption("-f", "bestvideo+bestaudio/best");
+            }
+        } else if (option.height > 0) {
+            request.addOption("-f", "best[height<=" + option.height + "]/best");
+        } else {
+            request.addOption("-f", "best");
+        }
+        return request;
+    }
+
+    private PlaylistDownloadResult downloadPlaylistEntriesSequential(List<PlaylistEntry> entries, String playlistUrl, DownloadOption option, File jobDir, File cookiesFile) throws Exception {
+        List<File> downloadedFiles = new ArrayList<>();
+        Set<String> copiedPaths = new HashSet<>();
+        Uri firstUri = null;
+        int successCount = 0;
+        int failedCount = 0;
+        int totalCount = entries == null ? 0 : entries.size();
+
+        mainHandler.post(() -> updatePlaylistCounter(0, totalCount, 0));
+        if (entries == null || entries.isEmpty()) {
+            return new PlaylistDownloadResult(downloadedFiles, null, 0, 0, 0);
+        }
+
+        for (PlaylistEntry entry : entries) {
+            if (cancelRequested) {
+                throw new IOException("İndirme iptal edildi.");
+            }
+
+            String entryUrl = playlistEntryDownloadUrl(playlistUrl, entry);
+            String key = keyForPlaylistIndex(entry.index);
+            if (skippedPlaylistIndexes.contains(entry.index)) {
+                mainHandler.post(() -> setPlaylistRowStatus(key, "Atlandı", currentTheme().mutedColor));
+                continue;
+            }
+
+            int doneBefore = successCount;
+            int failedBefore = failedCount;
+            skipCurrentRequested = false;
+            mainHandler.post(() -> {
+                activePlaylistIndex = entry.index;
+                activePlaylistKey = key;
+                setPlaylistRowStatus(key, "İndiriliyor", activePlatform.accentColor);
+                updatePlaylistCounter(doneBefore, totalCount, failedBefore);
+            });
+
+            if (TextUtils.isEmpty(entryUrl)) {
+                failedCount++;
+                int failedNow = failedCount;
+                mainHandler.post(() -> {
+                    setPlaylistRowStatus(key, "Hata", Color.rgb(173, 52, 52));
+                    updatePlaylistCounter(doneBefore, totalCount, failedNow);
+                });
+                continue;
+            }
+
+            try {
+                String outputTemplate = String.format(Locale.US, "%03d-", Math.max(1, entry.index)) + "%(title)s-%(id)s.%(ext)s";
+                YoutubeDLRequest request = buildDownloadRequest(entryUrl, jobDir, option, cookiesFile, false, outputTemplate);
+                YoutubeDL.getInstance().execute(request, PROCESS_ID, progressCallback);
+
+                List<File> newFiles = findUncopiedDownloadedFiles(jobDir, copiedPaths);
+                if (newFiles.isEmpty()) {
+                    throw new IOException("Video dosyası tamamlanmadı.");
+                }
+                for (File file : newFiles) {
+                    Uri copied = copyToPublicDownloads(file, option.audio);
+                    if (firstUri == null) {
+                        firstUri = copied;
+                    }
+                    copiedPaths.add(file.getAbsolutePath());
+                    downloadedFiles.add(file);
+                }
+
+                successCount++;
+                int successNow = successCount;
+                int failedNow = failedCount;
+                File playableFile = newFiles.get(0);
+                playlistDownloadedFiles.put(entry.index, playableFile);
+                mainHandler.post(() -> {
+                    completedPlaylistCount = successNow;
+                    failedPlaylistCount = failedNow;
+                    setPlaylistRowStatus(key, "Tamamlandı", Color.rgb(31, 135, 86));
+                    setPlaylistRowPlayable(key, playableFile);
+                    updatePlaylistCounter(successNow, totalCount, failedNow);
+                });
+            } catch (Exception entryError) {
+                if (cancelRequested) {
+                    throw entryError;
+                }
+                if (skipCurrentRequested || skippedPlaylistIndexes.contains(entry.index)) {
+                    skipCurrentRequested = false;
+                    mainHandler.post(() -> setPlaylistRowStatus(key, "Atlandı", currentTheme().mutedColor));
+                    continue;
+                }
+                failedCount++;
+                int successNow = successCount;
+                int failedNow = failedCount;
+                mainHandler.post(() -> {
+                    failedPlaylistCount = failedNow;
+                    setPlaylistRowStatus(key, "Hata", Color.rgb(173, 52, 52));
+                    updatePlaylistCounter(successNow, totalCount, failedNow);
+                });
+            }
+        }
+
+        return new PlaylistDownloadResult(downloadedFiles, firstUri, successCount, failedCount, totalCount);
+    }
+
+    private List<File> findUncopiedDownloadedFiles(File jobDir, Set<String> copiedPaths) {
+        List<File> files = findDownloadedFiles(jobDir);
+        List<File> fresh = new ArrayList<>();
+        for (File file : files) {
+            if (file != null && !copiedPaths.contains(file.getAbsolutePath())) {
+                fresh.add(file);
+            }
+        }
+        fresh.sort(Comparator.comparing(File::getName));
+        return fresh;
+    }
+
+    private String playlistEntryDownloadUrl(String playlistUrl, PlaylistEntry entry) {
+        String candidate = cleanPlaylistTitle(entry.url);
+        if (!TextUtils.isEmpty(candidate) && !"NA".equalsIgnoreCase(candidate)) {
+            String normalizedCandidate = normalizeUrl(candidate);
+            if (detectPlatform(normalizedCandidate) != null) {
+                return normalizedCandidate;
+            }
+        }
+
+        String platform = detectPlatform(playlistUrl);
+        if ("YouTube".equals(platform)) {
+            String videoId = firstNonEmpty(cleanPlaylistTitle(entry.id), candidate);
+            if (!TextUtils.isEmpty(videoId)
+                    && !"NA".equalsIgnoreCase(videoId)
+                    && !videoId.contains("/")
+                    && !videoId.contains(":")) {
+                return "https://www.youtube.com/watch?v=" + videoId;
+            }
+        }
+        return "";
+    }
+
+    private void updatePlaylistCounter(int completed, int total, int failed) {
+        activePlaylistTotal = Math.max(0, total);
+        completedPlaylistCount = Math.max(0, completed);
+        failedPlaylistCount = Math.max(0, failed);
+        if (playlistStatusTitle == null) {
+            return;
+        }
+        String title = "Playlist durumu - " + completedPlaylistCount + "/" + activePlaylistTotal + " indirildi";
+        if (failedPlaylistCount > 0) {
+            title += ", " + failedPlaylistCount + " hata";
+        }
+        playlistStatusTitle.setText(ui(title));
+    }
+
+    private List<PlaylistEntry> fetchPlaylistEntriesForDisplay(String url, File cookiesFile) {
+        try {
+            YoutubeDLRequest request = new YoutubeDLRequest(url);
+            request.addOption("--flat-playlist");
+            request.addOption("--playlist-items", "1:");
+            request.addOption("--skip-download");
+            request.addOption("--ignore-errors");
+            request.addOption("--skip-playlist-after-errors", "999999");
+            request.addOption("--no-warnings");
+            request.addOption("--socket-timeout", "20");
+            request.addOption("--extractor-retries", "3");
+            request.addOption("--retries", "3");
+            request.addOption("--print", PLAYLIST_ENTRY_PREFIX + "%(playlist_index)s\t%(title)s\t%(id)s\t%(url)s\t%(webpage_url)s");
+            if (cookiesFile != null) {
+                request.addOption("--cookies", cookiesFile.getAbsolutePath());
+            }
+            YoutubeDLResponse response = YoutubeDL.getInstance().execute(request, PLAYLIST_LIST_PROCESS_ID);
+            return parsePlaylistEntries(response == null ? "" : response.getOut());
+        } catch (Exception ignored) {
+            return Collections.emptyList();
+        }
+    }
+
+    private List<PlaylistEntry> parsePlaylistEntries(String output) {
+        List<PlaylistEntry> entries = new ArrayList<>();
+        if (TextUtils.isEmpty(output)) {
+            return entries;
+        }
+        String[] lines = output.replace("\r\n", "\n").replace('\r', '\n').split("\n");
+        Set<Integer> seenIndexes = new HashSet<>();
+        for (String rawLine : lines) {
+            String line = rawLine == null ? "" : rawLine.trim();
+            int prefixIndex = line.indexOf(PLAYLIST_ENTRY_PREFIX);
+            if (prefixIndex < 0) {
+                continue;
+            }
+            String payload = line.substring(prefixIndex + PLAYLIST_ENTRY_PREFIX.length());
+            String[] parts = payload.split("\t", 5);
+            int index = parsePositiveInt(parts.length > 0 ? parts[0] : "", entries.size() + 1);
+            if (seenIndexes.contains(index)) {
+                continue;
+            }
+            String title = parts.length > 1 ? cleanPlaylistTitle(parts[1]) : "";
+            String id = parts.length > 2 ? parts[2].trim() : "";
+            String entryUrl = firstNonEmpty(parts.length > 3 ? parts[3].trim() : "", parts.length > 4 ? parts[4].trim() : "");
+            if (TextUtils.isEmpty(title)) {
+                title = "Video " + index;
+            }
+            entries.add(new PlaylistEntry(index, title, id, entryUrl));
+            seenIndexes.add(index);
+        }
+        entries.sort(Comparator.comparingInt(entry -> entry.index));
+        return entries;
+    }
+
+    private void resetPlaylistStatus(boolean visible) {
+        activePlaylistIndex = 0;
+        activePlaylistTotal = 0;
+        completedPlaylistCount = 0;
+        failedPlaylistCount = 0;
+        activePlaylistKey = "";
+        playlistStatusRows.clear();
+        skippedPlaylistIndexes.clear();
+        playlistDownloadedFiles.clear();
+        if (playlistStatusList != null) {
+            playlistStatusList.removeAllViews();
+        }
+        if (playlistStatusTitle != null) {
+            playlistStatusTitle.setText(ui("Playlist durumu"));
+        }
+        if (playlistStatusPanel != null) {
+            playlistStatusPanel.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void showPlaylistEntries(List<PlaylistEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            if (playlistStatusTitle != null) {
+                playlistStatusTitle.setText(ui("Playlist durumu") + " - " + ui("Liste alınamadı."));
+            }
+            return;
+        }
+        resetPlaylistStatus(true);
+        activePlaylistTotal = entries.size();
+        updatePlaylistCounter(0, entries.size(), 0);
+        for (PlaylistEntry entry : entries) {
+            upsertPlaylistStatusRow(keyForPlaylistIndex(entry.index), entry.index, entry.title, "Bekliyor", currentTheme().mutedColor);
+        }
+    }
+
+    private void ensurePlaylistPlaceholders(int total) {
+        if (total <= 0 || playlistStatusList == null) {
+            return;
+        }
+        activePlaylistTotal = Math.max(activePlaylistTotal, total);
+        if (playlistStatusTitle != null) {
+            playlistStatusTitle.setText(ui("Playlist durumu") + " (" + activePlaylistTotal + ")");
+        }
+        for (int i = 1; i <= total; i++) {
+            String key = keyForPlaylistIndex(i);
+            if (!playlistStatusRows.containsKey(key)) {
+                upsertPlaylistStatusRow(key, i, "Video " + i, "Bekliyor", currentTheme().mutedColor);
+            }
+        }
+    }
+
+    private void updateActivePlaylistProgress(int percent) {
+        if (TextUtils.isEmpty(activePlaylistKey) || !playlistStatusRows.containsKey(activePlaylistKey)) {
+            return;
+        }
+        if (skippedPlaylistIndexes.contains(activePlaylistIndex)) {
+            return;
+        }
+        if (percent >= 100) {
+            setPlaylistRowStatus(activePlaylistKey, "Tamamlandı", Color.rgb(31, 135, 86));
+        } else if (percent > 0) {
+            setPlaylistRowStatus(activePlaylistKey, "İndiriliyor %" + percent, activePlatform.accentColor);
+        }
+    }
+
+    private void markPendingPlaylistRows(String status, int color) {
+        for (Map.Entry<String, PlaylistStatusRow> entry : playlistStatusRows.entrySet()) {
+            String current = String.valueOf(entry.getValue().statusView.getText());
+            if (!current.contains("Tamamlandı") && !current.contains("Hata")) {
+                setPlaylistRowStatus(entry.getKey(), status, color);
+            }
+        }
+    }
+
+    private void setPlaylistRowStatus(String key, String status, int color) {
+        PlaylistStatusRow row = playlistStatusRows.get(key);
+        if (row == null) {
+            return;
+        }
+        row.statusView.setText(ui(status));
+        row.statusView.setTextColor(color);
+        applyPlaylistRowProgress(row, status, color);
+        updatePlaylistRowControls(row, status);
+    }
+
+    private void updatePlaylistRowControls(PlaylistStatusRow row, String status) {
+        if (row == null) {
+            return;
+        }
+        String safeStatus = status == null ? "" : status;
+        boolean complete = safeStatus.contains("Tamamlandı");
+        boolean failed = safeStatus.contains("Hata");
+        boolean skipped = safeStatus.contains("Atlandı");
+        boolean active = safeStatus.startsWith("İndiriliyor");
+        row.includeBox.setOnCheckedChangeListener(null);
+        row.includeBox.setChecked(!skipped);
+        row.includeBox.setEnabled(!complete && !failed);
+        row.includeBox.setOnCheckedChangeListener((buttonView, checked) -> setPlaylistEntryIncluded(row.index, checked));
+        if (complete && row.file != null) {
+            row.actionButton.setText(ui("Oynat"));
+            row.actionButton.setEnabled(true);
+        } else if (skipped) {
+            row.actionButton.setText(ui("Atlandı"));
+            row.actionButton.setEnabled(false);
+        } else {
+            row.actionButton.setText(ui(active ? "Atla" : "Atla"));
+            row.actionButton.setEnabled(!failed);
+        }
+    }
+
+    private void setPlaylistRowPlayable(String key, File file) {
+        PlaylistStatusRow row = playlistStatusRows.get(key);
+        if (row == null) {
+            return;
+        }
+        row.file = file;
+        row.actionButton.setText(ui("Oynat"));
+        row.actionButton.setEnabled(file != null);
+    }
+
+    private void setPlaylistEntryIncluded(int index, boolean included) {
+        String key = keyForPlaylistIndex(index);
+        PlaylistStatusRow row = playlistStatusRows.get(key);
+        if (included) {
+            skippedPlaylistIndexes.remove(index);
+            if (row != null && row.file == null && index != activePlaylistIndex) {
+                setPlaylistRowStatus(key, "Bekliyor", currentTheme().mutedColor);
+            }
+            return;
+        }
+        skipPlaylistEntry(index);
+    }
+
+    private void skipPlaylistEntry(int index) {
+        skippedPlaylistIndexes.add(index);
+        String key = keyForPlaylistIndex(index);
+        setPlaylistRowStatus(key, "Atlandı", currentTheme().mutedColor);
+        if (activePlaylistDownload && index == activePlaylistIndex) {
+            skipCurrentRequested = true;
+            new Thread(() -> {
+                try {
+                    YoutubeDL.getInstance().destroyProcessById(PROCESS_ID);
+                } catch (Exception ignored) {
+                    // Process may already be between videos.
+                }
+            }, "metafold-skip-video").start();
+        }
+    }
+
+    private void applyPlaylistRowProgress(PlaylistStatusRow row, String status, int color) {
+        if (row.progressBar == null) {
+            return;
+        }
+        String safeStatus = status == null ? "" : status;
+        int progress = progressFromStatus(safeStatus);
+        boolean active = safeStatus.startsWith("İndiriliyor");
+        boolean complete = safeStatus.contains("Tamamlandı");
+        boolean failed = safeStatus.contains("Hata");
+        boolean skipped = safeStatus.contains("Atlandı");
+
+        int tint = color;
+        if (complete) {
+            progress = 100;
+            tint = Color.rgb(31, 135, 86);
+        } else if (failed) {
+            progress = Math.max(progress, 100);
+            tint = Color.rgb(173, 52, 52);
+        } else if (skipped) {
+            progress = 100;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            row.progressBar.setProgressTintList(ColorStateList.valueOf(tint));
+            row.progressBar.setProgressBackgroundTintList(ColorStateList.valueOf(currentTheme().borderColor));
+            row.progressBar.setIndeterminateTintList(ColorStateList.valueOf(tint));
+        }
+
+        if (active && progress <= 0) {
+            row.progressBar.setIndeterminate(true);
+            row.progressBar.setAlpha(1f);
+        } else {
+            row.progressBar.setIndeterminate(false);
+            row.progressBar.setProgress(Math.max(0, Math.min(100, progress)));
+            row.progressBar.setAlpha((complete || failed || skipped || progress > 0) ? 1f : 0.45f);
+        }
+
+        row.container.animate()
+                .scaleX(active ? 1.01f : 1f)
+                .scaleY(active ? 1.01f : 1f)
+                .setDuration(180L)
+                .start();
+    }
+
+    private static int progressFromStatus(String status) {
+        if (TextUtils.isEmpty(status)) {
+            return 0;
+        }
+        Matcher matcher = Pattern.compile("%\\s*(\\d{1,3})").matcher(status);
+        if (matcher.find()) {
+            return Math.max(0, Math.min(100, parsePositiveInt(matcher.group(1), 0)));
+        }
+        return 0;
+    }
+
+    private void upsertPlaylistStatusRow(String key, int index, String title, String status, int statusColor) {
+        if (playlistStatusList == null || TextUtils.isEmpty(key)) {
+            return;
+        }
+        if (playlistStatusPanel != null && playlistStatusPanel.getVisibility() != View.VISIBLE) {
+            playlistStatusPanel.setVisibility(View.VISIBLE);
+        }
+        PlaylistStatusRow row = playlistStatusRows.get(key);
+        if (row == null) {
+            row = createPlaylistStatusRow(index, title);
+            playlistStatusRows.put(key, row);
+            LinearLayout.LayoutParams params = matchWrap();
+            params.topMargin = dp(6);
+            row.container.setAlpha(0f);
+            playlistStatusList.addView(row.container, params);
+            row.container.animate().alpha(1f).setDuration(180L).start();
+        }
+        if (!TextUtils.isEmpty(title)) {
+            String currentTitle = String.valueOf(row.titleView.getText());
+            boolean currentIsPlaceholder = currentTitle.startsWith("Video ");
+            boolean nextIsPlaceholder = title.startsWith("Video ");
+            if (currentIsPlaceholder || !nextIsPlaceholder) {
+                row.titleView.setText(trimForUi(title, 96));
+            }
+        }
+        setPlaylistRowStatus(key, status, statusColor);
+    }
+
+    private PlaylistStatusRow createPlaylistStatusRow(int index, String title) {
+        AppThemeOption theme = currentTheme();
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10), dp(8), dp(10), dp(8));
+        row.setBackground(rounded(theme.surfaceAltColor, 8, theme.borderColor));
+
+        CheckBox includeBox = new CheckBox(this);
+        includeBox.setChecked(true);
+        includeBox.setOnCheckedChangeListener((buttonView, checked) -> setPlaylistEntryIncluded(index, checked));
+        row.addView(includeBox, new LinearLayout.LayoutParams(dp(38), dp(42)));
+
+        TextView number = textView(String.valueOf(index), 12, readableOn(activePlatform.accentColor), true);
+        number.setGravity(Gravity.CENTER);
+        number.setBackground(rounded(activePlatform.accentColor, 18, activePlatform.accentColor));
+        LinearLayout.LayoutParams numberParams = new LinearLayout.LayoutParams(dp(34), dp(34));
+        numberParams.leftMargin = dp(4);
+        row.addView(number, numberParams);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        textParams.leftMargin = dp(10);
+        row.addView(texts, textParams);
+
+        TextView titleView = textView(TextUtils.isEmpty(title) ? "Video " + index : trimForUi(title, 96), 13, theme.textColor, true);
+        titleView.setSingleLine(true);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(titleView);
+
+        TextView status = textView("Bekliyor", 12, theme.mutedColor, false);
+        status.setPadding(0, dp(2), 0, 0);
+        texts.addView(status);
+
+        ProgressBar rowProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        rowProgress.setMax(100);
+        rowProgress.setProgress(0);
+        rowProgress.setAlpha(0.45f);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            rowProgress.setProgressTintList(ColorStateList.valueOf(activePlatform.accentColor));
+            rowProgress.setProgressBackgroundTintList(ColorStateList.valueOf(theme.borderColor));
+            rowProgress.setIndeterminateTintList(ColorStateList.valueOf(activePlatform.accentColor));
+        }
+        LinearLayout.LayoutParams progressParams = matchWrap();
+        progressParams.topMargin = dp(6);
+        texts.addView(rowProgress, progressParams);
+
+        Button actionButton = secondaryButton("Atla");
+        actionButton.setTextSize(11);
+        actionButton.setMinHeight(dp(34));
+        actionButton.setPadding(dp(6), 0, dp(6), 0);
+        actionButton.setOnClickListener(v -> {
+            PlaylistStatusRow current = playlistStatusRows.get(keyForPlaylistIndex(index));
+            if (current != null && current.file != null) {
+                openFile(current.file);
+            } else {
+                skipPlaylistEntry(index);
+            }
+        });
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(dp(70), dp(38));
+        actionParams.leftMargin = dp(8);
+        row.addView(actionButton, actionParams);
+
+        return new PlaylistStatusRow(index, row, titleView, status, rowProgress, includeBox, actionButton);
+    }
+
+    private static String keyForPlaylistIndex(int index) {
+        return "index:" + Math.max(1, index);
+    }
+
+    private static int parsePositiveInt(String value, int fallback) {
+        if (TextUtils.isEmpty(value)) {
+            return fallback;
+        }
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            return parsed > 0 ? parsed : fallback;
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static String cleanPlaylistTitle(String title) {
+        if (title == null) {
+            return "";
+        }
+        String cleaned = title.replace('\n', ' ').replace('\r', ' ').trim();
+        if ("NA".equalsIgnoreCase(cleaned) || "null".equalsIgnoreCase(cleaned)) {
+            return "";
+        }
+        return cleaned;
+    }
+
+    private static String displayNameFromPath(String path) {
+        String cleaned = cleanPlaylistTitle(path);
+        if (TextUtils.isEmpty(cleaned)) {
+            return "";
+        }
+        int slash = Math.max(cleaned.lastIndexOf('/'), cleaned.lastIndexOf('\\'));
+        if (slash >= 0 && slash + 1 < cleaned.length()) {
+            cleaned = cleaned.substring(slash + 1);
+        }
+        int dot = cleaned.lastIndexOf('.');
+        if (dot > 0) {
+            cleaned = cleaned.substring(0, dot);
+        }
+        cleaned = cleaned.replaceFirst("^\\d{1,4}-", "");
+        return cleanPlaylistTitle(cleaned);
+    }
+
+    private void cancelDownload() {
+        if (!downloading) {
+            return;
+        }
+        cancelRequested = true;
+        setStatus("İptal ediliyor...", false);
+        executor.execute(() -> {
+            try {
+                YoutubeDL.getInstance().destroyProcessById(PLAYLIST_LIST_PROCESS_ID);
+                YoutubeDL.getInstance().destroyProcessById(PROCESS_ID);
+            } catch (Exception ignored) {
+                // No active process.
+            }
+        });
+    }
+
+    private void updateExtractor() {
+        if (downloading) {
+            toast("İndirme sırasında güncelleme yapılamaz");
+            return;
+        }
+        setBusy(true, "İndirme motoru güncelleniyor...");
+        executor.execute(() -> {
+            try {
+                ensureDownloaderReady();
+                UpdateResult updateResult = updateYoutubeDl(true);
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    setStatus(updateResult.message, true);
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    setStatus("Güncelleme başarısız.", false);
+                    outputView.setText(cleanError(error));
+                });
+            }
+        });
+    }
+
+    private void ensureDownloaderReady() throws YoutubeDLException {
+        synchronized (initLock) {
+            if (downloaderReady) {
+                return;
+            }
+            YoutubeDL.getInstance().init(this);
+            ffmpegReady = initOptionalLibrary(
+                    "com.yausername.ffmpeg.FFmpeg",
+                    "com.yausername.youtubedl_android.FFmpeg"
+            );
+            downloaderReady = true;
+        }
+    }
+
+    private UpdateResult updateYoutubeDl(boolean force) throws YoutubeDLException {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        long lastUpdate = prefs.getLong(PREF_LAST_UPDATE, 0L);
+        if (!force && lastUpdate > 0L && now - lastUpdate < UPDATE_INTERVAL_MS) {
+            return new UpdateResult("Hazir");
+        }
+
+        mainHandler.post(() -> setStatus("İndirme motoru güncelleniyor...", true));
+        YoutubeDL.UpdateStatus status = YoutubeDL.getInstance().updateYoutubeDL(this, YoutubeDL.UpdateChannel._STABLE);
+        prefs.edit().putLong(PREF_LAST_UPDATE, now).apply();
+        if (status == YoutubeDL.UpdateStatus.DONE) {
+            return new UpdateResult("İndirme motoru güncellendi");
+        }
+        return new UpdateResult("Hazir");
+    }
+
+    private String safeVersionName() {
+        try {
+            String version = YoutubeDL.getInstance().versionName(this);
+            if (!TextUtils.isEmpty(version)) {
+                return "yt-dlp " + version.trim();
+            }
+        } catch (Exception ignored) {
+            // Version is only informational.
+        }
+        return "yt-dlp";
+    }
+
+    private boolean initOptionalLibrary(String... classNames) {
+        for (String className : classNames) {
+            try {
+                Class<?> libraryClass = Class.forName(className);
+                Method getInstance = libraryClass.getMethod("getInstance");
+                Object instance = getInstance.invoke(null);
+                Method init = libraryClass.getMethod("init", Context.class);
+                init.invoke(instance, this);
+                return true;
+            } catch (ClassNotFoundException ignored) {
+                // Try the next package name.
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private File buildCookieFile(String pageUrl, File parentDir) throws IOException {
+        CookieManager manager = CookieManager.getInstance();
+        List<String> lookupUrls = cookieLookupUrls(pageUrl);
+        Map<String, CookieLine> cookies = new LinkedHashMap<>();
+        for (String lookupUrl : lookupUrls) {
+            String raw = manager.getCookie(lookupUrl);
+            if (TextUtils.isEmpty(raw)) {
+                continue;
+            }
+            String host = hostOf(lookupUrl);
+            if (TextUtils.isEmpty(host)) {
+                continue;
+            }
+            String domain = cookieDomain(host);
+            String[] pairs = raw.split(";");
+            for (String pair : pairs) {
+                String trimmed = pair.trim();
+                int equals = trimmed.indexOf('=');
+                if (equals <= 0) {
+                    continue;
+                }
+                String name = trimmed.substring(0, equals).trim();
+                String value = trimmed.substring(equals + 1).trim();
+                if (TextUtils.isEmpty(name)) {
+                    continue;
+                }
+                String key = domain + "|" + name;
+                cookies.put(key, new CookieLine(domain, name, value));
+            }
+        }
+
+        if (cookies.isEmpty()) {
+            return null;
+        }
+
+        File file = new File(parentDir, "metafold-cookies-" + System.currentTimeMillis() + ".txt");
+        long expires = System.currentTimeMillis() / 1000L + 365L * 24L * 60L * 60L;
+        try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
+            writer.write("# Netscape HTTP Cookie File\n");
+            for (CookieLine cookie : cookies.values()) {
+                writer.write(cookie.domain);
+                writer.write("\tTRUE\t/\tTRUE\t");
+                writer.write(String.valueOf(expires));
+                writer.write('\t');
+                writer.write(cookie.name);
+                writer.write('\t');
+                writer.write(cookie.value);
+                writer.write('\n');
+            }
+        }
+        return file;
+    }
+
+    private List<String> cookieLookupUrls(String pageUrl) {
+        List<String> urls = new ArrayList<>();
+        addUnique(urls, normalizeUrl(pageUrl));
+        addUnique(urls, "https://www.youtube.com/");
+        addUnique(urls, "https://m.youtube.com/");
+        addUnique(urls, "https://accounts.google.com/");
+        addUnique(urls, "https://www.google.com/");
+        addUnique(urls, "https://www.instagram.com/");
+        addUnique(urls, "https://www.facebook.com/");
+        addUnique(urls, "https://m.facebook.com/");
+        addUnique(urls, "https://www.tiktok.com/");
+        addUnique(urls, "https://www.pinterest.com/");
+        addUnique(urls, "https://pinterest.com/");
+        addUnique(urls, "https://pin.it/");
+        addUnique(urls, "https://x.com/");
+        addUnique(urls, "https://twitter.com/");
+        return urls;
+    }
+
+    private Uri copyToPublicDownloads(File source, boolean audio) throws IOException {
+        Uri selectedFolderUri = selectedFolderUri(audio);
+        if (selectedFolderUri != null) {
+            return copyToSelectedFolder(source, selectedFolderUri);
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return FileProvider.getUriForFile(this, getPackageName() + ".files", source);
+        }
+
+        String mimeType = guessMimeType(source);
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.MediaColumns.DISPLAY_NAME, source.getName());
+        values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + DOWNLOAD_FOLDER);
+        values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+
+        Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+        if (uri == null) {
+            throw new IOException("Downloads kaydi olusturulamadi.");
+        }
+
+        try (InputStream input = new FileInputStream(source);
+             OutputStream output = getContentResolver().openOutputStream(uri)) {
+            if (output == null) {
+                throw new IOException("Downloads dosyası açılamadı.");
+            }
+            copy(input, output);
+        } catch (IOException error) {
+            getContentResolver().delete(uri, null, null);
+            throw error;
+        }
+
+        ContentValues done = new ContentValues();
+        done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+        getContentResolver().update(uri, done, null, null);
+        return uri;
+    }
+
+    private Uri selectedFolderUri(boolean audio) {
+        String value = getString(audio ? PREF_AUDIO_FOLDER_URI : PREF_VIDEO_FOLDER_URI, "");
+        if (TextUtils.isEmpty(value)) {
+            return null;
+        }
+        try {
+            return Uri.parse(value);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String outputFolderLabel(boolean audio) {
+        Uri selected = selectedFolderUri(audio);
+        if (selected == null) {
+            return "Downloads/" + DOWNLOAD_FOLDER;
+        }
+        return folderLabel(audio ? PREF_AUDIO_FOLDER_URI : PREF_VIDEO_FOLDER_URI);
+    }
+
+    private Uri copyToSelectedFolder(File source, Uri folderUri) throws IOException {
+        DocumentFile folder = DocumentFile.fromTreeUri(this, folderUri);
+        if (folder == null || !folder.isDirectory()) {
+            throw new IOException("Seçili klasör açılamadı.");
+        }
+        DocumentFile target = folder.createFile(guessMimeType(source), source.getName());
+        if (target == null || target.getUri() == null) {
+            throw new IOException("Seçili klasörde dosya oluşturulamadı.");
+        }
+        try (InputStream input = new FileInputStream(source);
+             OutputStream output = getContentResolver().openOutputStream(target.getUri())) {
+            if (output == null) {
+                throw new IOException("Seçili klasöre yazılamadı.");
+            }
+            copy(input, output);
+            return target.getUri();
+        }
+    }
+
+    private File findDownloadedFile(File directory) {
+        List<File> files = findDownloadedFiles(directory);
+        return files.isEmpty() ? null : files.get(0);
+    }
+
+    private List<File> findDownloadedFiles(File directory) {
+        List<File> files = new ArrayList<>();
+        collectCandidateFiles(directory, files);
+        files.sort(Comparator
+                .comparingLong(File::lastModified)
+                .thenComparingLong(File::length)
+                .reversed());
+        return files;
+    }
+
+    private void collectCandidateFiles(File directory, List<File> files) {
+        File[] children = directory.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            if (child.isDirectory()) {
+                collectCandidateFiles(child, files);
+                continue;
+            }
+            String name = child.getName().toLowerCase(Locale.US);
+            if (child.length() > 0
+                    && !name.endsWith(".part")
+                    && !name.endsWith(".ytdl")
+                    && !name.endsWith(".temp")
+                    && !name.endsWith(".tmp")
+                    && !name.endsWith(".description")
+                    && !name.endsWith(".json")
+                    && !name.endsWith(".properties")
+                    && !name.equals(JOB_METADATA_FILE)
+                    && !name.contains("cookie")) {
+                files.add(child);
+            }
+        }
+    }
+
+    private void openLastFile() {
+        Uri uri = lastUri;
+        if (uri == null && lastFile != null) {
+            uri = FileProvider.getUriForFile(this, getPackageName() + ".files", lastFile);
+        }
+        if (uri == null) {
+            toast("Önce bir video indirin");
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, lastMimeType);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startChooser(intent, "Dosyayı aç");
+    }
+
+    private void shareLastFile() {
+        Uri uri = lastUri;
+        if (uri == null && lastFile != null) {
+            uri = FileProvider.getUriForFile(this, getPackageName() + ".files", lastFile);
+        }
+        if (uri == null) {
+            toast("Önce bir video indirin");
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType(lastMimeType);
+        intent.putExtra(Intent.EXTRA_STREAM, uri);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startChooser(intent, "Dosyayı paylaş");
+    }
+
+    private void openFile(File file) {
+        if (file == null || !file.exists()) {
+            toast("Dosya bulunamadı");
+            return;
+        }
+        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", file);
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, guessMimeType(file));
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startChooser(intent, "Dosyayı aç");
+    }
+
+    private void shareFile(File file) {
+        if (file == null || !file.exists()) {
+            toast("Dosya bulunamadı");
+            return;
+        }
+        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", file);
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType(guessMimeType(file));
+        intent.putExtra(Intent.EXTRA_STREAM, uri);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startChooser(intent, "Dosyayı paylaş");
+    }
+
+    private void startChooser(Intent intent, String title) {
+        try {
+            startActivity(Intent.createChooser(intent, title));
+        } catch (Exception error) {
+            setStatus("Uygun uygulama bulunamadı.", false);
+        }
+    }
+
+    private void pasteFromClipboard() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard == null || !clipboard.hasPrimaryClip()) {
+            toast("Panoda link yok");
+            return;
+        }
+        ClipData clip = clipboard.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) {
+            toast("Panoda link yok");
+            return;
+        }
+        CharSequence text = clip.getItemAt(0).coerceToText(this);
+        String url = extractFirstUrl(String.valueOf(text));
+        if (TextUtils.isEmpty(url)) {
+            url = String.valueOf(text).trim();
+        }
+        setUrlAndReset(url);
+    }
+
+    private boolean handleIncomingIntent(Intent intent) {
+        if (intent == null) {
+            return false;
+        }
+
+        String raw = "";
+        if (Intent.ACTION_SEND.equals(intent.getAction())) {
+            CharSequence shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+            raw = shared == null ? "" : shared.toString();
+        } else if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
+            raw = intent.getData().toString();
+        }
+
+        if (TextUtils.isEmpty(raw)) {
+            return false;
+        }
+
+        String url = extractFirstUrl(raw);
+        if (TextUtils.isEmpty(url)) {
+            url = raw.trim();
+        }
+        if (detectPlatform(normalizeUrl(url)) == null) {
+            return false;
+        }
+        setUrlAndReset(url);
+        showDownloader();
+        return true;
+    }
+
+    private void setUrlAndReset(String url) {
+        urlInput.setText(displayUrlForUi(url));
+        urlInput.setSelection(urlInput.length());
+        currentInfoUrl = "";
+        currentInfoPlaylistMode = false;
+        selectedOption = null;
+        optionList.removeAllViews();
+        optionButtons.clear();
+        optionHeaderView.setText(ui("Kalite seçenekleri henüz alınmadı."));
+        outputView.setText("");
+        hideLastDownloadSummary();
+        updatePlaylistModeVisibility(url, true);
+        showDetectedPlatform(url);
+        SocialPlatform detected = platformByDetectedName(detectPlatform(normalizeUrl(url)));
+        if (detected != null) {
+            activePlatform = detected;
+            updatePlatformHeader();
+        }
+    }
+
+    private void clearSelection() {
+        urlInput.setText("");
+        platformView.setText(ui("Link modu"));
+        optionHeaderView.setText(ui("Kalite seçenekleri henüz alınmadı."));
+        optionList.removeAllViews();
+        optionButtons.clear();
+        outputView.setText("");
+        hideLastDownloadSummary();
+        currentInfoUrl = "";
+        currentInfoPlaylistMode = false;
+        selectedOption = null;
+        updatePlaylistModeVisibility("", false);
+    }
+
+    private String extractFirstUrl(String text) {
+        if (text == null) {
+            return "";
+        }
+        Matcher matcher = URL_PATTERN.matcher(text);
+        if (!matcher.find()) {
+            return "";
+        }
+        return matcher.group(1).replaceAll("[),.;]+$", "");
+    }
+
+    private void showDetectedPlatform(String url) {
+        String platform = detectPlatform(normalizeUrl(url));
+        updatePlaylistModeVisibility(url, false);
+        platformView.setText(platform == null ? ui("Desteklenmeyen link") : platform);
+    }
+
+    private void updatePlaylistModeVisibility(String url, boolean autoCheck) {
+        if (playlistModeRow == null || playlistSwitch == null) {
+            return;
+        }
+        boolean playlist = isPlaylistCandidate(normalizeUrl(url));
+        playlistModeRow.setVisibility(playlist ? View.VISIBLE : View.GONE);
+        playlistSwitch.setEnabled(playlist && !busy && !downloading);
+        if (autoCheck) {
+            playlistSwitch.setChecked(playlist);
+        } else if (!playlist) {
+            playlistSwitch.setChecked(false);
+        }
+    }
+
+    private void resetInfoForPlaylistToggle() {
+        if (optionHeaderView == null || optionList == null) {
+            return;
+        }
+        currentInfoUrl = "";
+        currentInfoPlaylistMode = false;
+        selectedOption = null;
+        optionList.removeAllViews();
+        optionButtons.clear();
+        optionHeaderView.setText(ui("Kalite seçenekleri henüz alınmadı."));
+        setFileActionsEnabled(false);
+    }
+
+    private boolean isPlaylistModeEnabled(String normalizedUrl) {
+        return playlistSwitch != null
+                && playlistSwitch.isChecked()
+                && isPlaylistCandidate(normalizedUrl);
+    }
+
+    private boolean isPlaylistCandidate(String normalizedUrl) {
+        if (TextUtils.isEmpty(normalizedUrl)) {
+            return false;
+        }
+        String platform = detectPlatform(normalizedUrl);
+        if (!"YouTube".equals(platform)) {
+            return false;
+        }
+        try {
+            Uri uri = Uri.parse(normalizedUrl);
+            String list = uri.getQueryParameter("list");
+            return !TextUtils.isEmpty(list) || (uri.getPath() != null && uri.getPath().contains("/playlist"));
+        } catch (Exception ignored) {
+            return normalizedUrl.contains("list=");
+        }
+    }
+
+    private String normalizeUrl(String rawUrl) {
+        if (rawUrl == null) {
+            return "";
+        }
+        String trimmed = displayUrlForUi(rawUrl).trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        if (trimmed.startsWith("//")) {
+            trimmed = "https:" + trimmed;
+        } else if (!trimmed.toLowerCase(Locale.US).startsWith("http://")
+                && !trimmed.toLowerCase(Locale.US).startsWith("https://")) {
+            trimmed = "https://" + trimmed;
+        }
+        try {
+            Uri uri = Uri.parse(trimmed);
+            if (TextUtils.isEmpty(uri.getScheme()) || TextUtils.isEmpty(uri.getEncodedAuthority())) {
+                return trimmed;
+            }
+            return new URI(
+                    uri.getScheme(),
+                    uri.getEncodedAuthority(),
+                    uri.getPath(),
+                    uri.getQuery(),
+                    uri.getFragment()
+            ).toASCIIString();
+        } catch (Exception ignored) {
+            return trimmed;
+        }
+    }
+
+    private String displayUrlForUi(String rawUrl) {
+        if (rawUrl == null) {
+            return "";
+        }
+        try {
+            return Uri.decode(rawUrl.trim());
+        } catch (Exception ignored) {
+            return rawUrl.trim();
+        }
+    }
+
+    private String detectPlatform(String url) {
+        try {
+            URI uri = new URI(url);
+            String host = uri.getHost();
+            if (host == null) {
+                return null;
+            }
+            host = host.toLowerCase(Locale.US);
+            if (host.startsWith("www.")) {
+                host = host.substring(4);
+            }
+            if (host.equals("youtu.be") || host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com")) {
+                return "YouTube";
+            }
+            if (host.endsWith("instagram.com")) {
+                return "Instagram";
+            }
+            if (host.equals("fb.watch") || host.endsWith("facebook.com")) {
+                return "Facebook";
+            }
+            if (host.endsWith("tiktok.com")) {
+                return "TikTok";
+            }
+            if (host.endsWith("pinterest.com") || host.equals("pin.it")) {
+                return "Pinterest";
+            }
+            if (host.endsWith("x.com") || host.endsWith("twitter.com")) {
+                return "X / Twitter";
+            }
+            return null;
+        } catch (URISyntaxException error) {
+            return null;
+        }
+    }
+
+    private String guessMimeType(File file) {
+        String extension = "";
+        String name = file.getName();
+        int dot = name.lastIndexOf('.');
+        if (dot >= 0 && dot + 1 < name.length()) {
+            extension = name.substring(dot + 1).toLowerCase(Locale.US);
+        }
+        String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
+        if (!TextUtils.isEmpty(mimeType)) {
+            return mimeType;
+        }
+        if ("mp4".equals(extension) || "m4v".equals(extension)) {
+            return "video/mp4";
+        }
+        if ("webm".equals(extension)) {
+            return "video/webm";
+        }
+        if ("mp3".equals(extension)) {
+            return "audio/mpeg";
+        }
+        if ("m4a".equals(extension)) {
+            return "audio/mp4";
+        }
+        return "application/octet-stream";
+    }
+
+    private void setDownloading(boolean active) {
+        downloading = active;
+        if (active) {
+            startDownloadKeepAlive();
+        } else {
+            stopDownloadKeepAlive();
+        }
+        setControlsEnabled(!active && !busy);
+        cancelButton.setEnabled(active);
+        downloadButton.setEnabled(!busy && (!active || getBool(PREF_LIMIT_QUEUE, true)));
+        if (active) {
+            startProgressPulse();
+        } else {
+            stopProgressPulse();
+        }
+    }
+
+    private void startDownloadKeepAlive() {
+        try {
+            Intent intent = new Intent(this, DownloadKeepAliveService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent);
+            } else {
+                startService(intent);
+            }
+        } catch (Exception ignored) {
+            // Downloads still run in-process; the service is an extra keep-alive layer.
+        }
+    }
+
+    private void stopDownloadKeepAlive() {
+        try {
+            stopService(new Intent(this, DownloadKeepAliveService.class));
+        } catch (Exception ignored) {
+            // Service may not have been started.
+        }
+    }
+
+    private void setBusy(boolean active, String status) {
+        busy = active;
+        progressBar.setIndeterminate(active);
+        if (!active) {
+            progressBar.setIndeterminate(false);
+        }
+        setControlsEnabled(!active && !downloading);
+        if (!TextUtils.isEmpty(status)) {
+            setStatus(status, true);
+        }
+    }
+
+    private void setControlsEnabled(boolean enabled) {
+        urlInput.setEnabled(enabled);
+        pasteButton.setEnabled(enabled);
+        analyzeButton.setEnabled(enabled);
+        updateButton.setEnabled(enabled);
+        if (playlistSwitch != null) {
+            playlistSwitch.setEnabled(enabled && isPlaylistCandidate(normalizeUrl(urlInput.getText().toString())));
+        }
+        downloadButton.setEnabled(!busy && (enabled || (downloading && getBool(PREF_LIMIT_QUEUE, true))));
+        browserDownloadButton.setEnabled(enabled && browserPageDownloadAvailable);
+    }
+
+    private void setFileActionsEnabled(boolean enabled) {
+        openButton.setEnabled(enabled);
+        shareButton.setEnabled(enabled);
+    }
+
+    private void showLastDownloadSummary(String platformName, DownloadOption option, File file) {
+        if (lastDownloadSummary == null || file == null) {
+            return;
+        }
+        SocialPlatform platform = platformByDetectedName(platformName);
+        int accent = platform == null ? activePlatform.accentColor : platform.accentColor;
+        AppThemeOption theme = currentTheme();
+
+        lastDownloadSummary.removeAllViews();
+        lastDownloadSummary.setOrientation(LinearLayout.HORIZONTAL);
+        lastDownloadSummary.setGravity(Gravity.CENTER_VERTICAL);
+        lastDownloadSummary.setPadding(dp(10), dp(10), dp(10), dp(10));
+        lastDownloadSummary.setBackground(rounded(softAccent(accent), 8, accent));
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(platform == null ? R.drawable.ic_downloads : platform.iconRes);
+        if (platform == null) {
+            icon.setColorFilter(theme.mutedColor);
+        }
+        icon.setPadding(dp(4), dp(4), dp(4), dp(4));
+        icon.setBackground(rounded(theme.surfaceAltColor, 8, accent));
+        lastDownloadSummary.addView(icon, new LinearLayout.LayoutParams(dp(46), dp(46)));
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        textParams.leftMargin = dp(12);
+        lastDownloadSummary.addView(texts, textParams);
+
+        TextView title = textView(file.getName(), 14, accent, true);
+        title.setSingleLine(false);
+        texts.addView(title);
+
+        String label = (platform == null ? platformName : platform.name) + "  |  " + option.label + "  |  " + readableSize(file.length());
+        TextView detail = textView(label, 12, theme.mutedColor, false);
+        detail.setPadding(0, dp(4), 0, 0);
+        texts.addView(detail);
+
+        lastDownloadSummary.setAlpha(0f);
+        lastDownloadSummary.setTranslationY(dp(8));
+        lastDownloadSummary.setVisibility(View.VISIBLE);
+        lastDownloadSummary.animate().alpha(1f).translationY(0f).setDuration(180L).start();
+    }
+
+    private void hideLastDownloadSummary() {
+        if (lastDownloadSummary != null) {
+            lastDownloadSummary.setVisibility(View.GONE);
+            lastDownloadSummary.removeAllViews();
+        }
+    }
+
+    private static String downloadProgressText(int percent, Long etaInSeconds) {
+        String message = "İndiriliyor... %" + percent;
+        if (etaInSeconds != null && etaInSeconds > 0L) {
+            message += " - kalan " + formatEta(etaInSeconds);
+        }
+        return message;
+    }
+
+    private static String formatEta(long seconds) {
+        long safeSeconds = Math.max(0L, seconds);
+        long minutes = safeSeconds / 60L;
+        long remainingSeconds = safeSeconds % 60L;
+        long hours = minutes / 60L;
+        long remainingMinutes = minutes % 60L;
+        if (hours > 0L) {
+            return String.format(Locale.US, "%d sa %02d dk", hours, remainingMinutes);
+        }
+        if (minutes > 0L) {
+            return String.format(Locale.US, "%d dk %02d sn", minutes, remainingSeconds);
+        }
+        return remainingSeconds + " sn";
+    }
+
+    private void startProgressPulse() {
+        if (progressBar == null || progressPulseRunning) {
+            return;
+        }
+        progressPulseRunning = true;
+        progressBar.setAlpha(1f);
+        animateProgressPulse(false);
+    }
+
+    private void animateProgressPulse(boolean dim) {
+        if (!progressPulseRunning || progressBar == null) {
+            return;
+        }
+        progressBar.animate()
+                .alpha(dim ? 0.55f : 1f)
+                .setDuration(520L)
+                .withEndAction(() -> animateProgressPulse(!dim))
+                .start();
+    }
+
+    private void stopProgressPulse() {
+        progressPulseRunning = false;
+        if (progressBar != null) {
+            progressBar.animate().cancel();
+            progressBar.setAlpha(1f);
+        }
+    }
+
+    private void setStatus(String message, boolean ok) {
+        statusView.setText(ui(message));
+        statusView.setTextColor(ok ? activePlatform.accentColor : Color.rgb(173, 52, 52));
+    }
+
+    private void addNavItem(LinearLayout row, String label, int iconRes, Runnable action) {
+        AppThemeOption theme = currentTheme();
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setPadding(dp(8), dp(7), dp(8), dp(7));
+        item.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+        item.setMinimumWidth(dp(76));
+        item.setOnClickListener(v -> action.run());
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        if (shouldTintGenericIcon(iconRes)) {
+            icon.setColorFilter(theme.mutedColor);
+        }
+        item.addView(icon, new LinearLayout.LayoutParams(dp(28), dp(28)));
+
+        TextView text = textView(label, 11, Color.rgb(23, 32, 29), false);
+        text.setGravity(Gravity.CENTER);
+        text.setSingleLine(true);
+        text.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        textParams.topMargin = dp(3);
+        item.addView(text, textParams);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.rightMargin = dp(8);
+        row.addView(item, params);
+    }
+
+    private AppThemeOption currentTheme() {
+        String key = getString(PREF_THEME, APP_THEMES[0].key);
+        for (AppThemeOption theme : APP_THEMES) {
+            if (theme.key.equals(key)) {
+                return theme;
+            }
+        }
+        if ("night".equals(key) || "midnight".equals(key)) {
+            return APP_THEMES[1];
+        }
+        return APP_THEMES[0];
+    }
+
+    private String[] themeKeys() {
+        String[] keys = new String[APP_THEMES.length];
+        for (int i = 0; i < APP_THEMES.length; i++) {
+            keys[i] = APP_THEMES[i].key;
+        }
+        return keys;
+    }
+
+    private String themeName(String key) {
+        for (AppThemeOption theme : APP_THEMES) {
+            if (theme.key.equals(key)) {
+                return themeName(theme);
+            }
+        }
+        return themeName(APP_THEMES[0]);
+    }
+
+    private String themeName(AppThemeOption theme) {
+        return isEnglish() ? theme.enName : theme.trName;
+    }
+
+    private String themeSubtitle(AppThemeOption theme) {
+        return isEnglish() ? theme.enSubtitle : theme.trSubtitle;
+    }
+
+    private boolean isEnglish() {
+        return "en".equals(selectedLanguage);
+    }
+
+    private String ui(String value) {
+        if (!isEnglish() || value == null || value.isEmpty()) {
+            return value == null ? "" : value;
+        }
+        if (value.startsWith("Dosyalar: ")) {
+            return "Files: " + value.substring("Dosyalar: ".length());
+        }
+        if (value.startsWith("Seçilen: ")) {
+            return "Selected: " + value.substring("Seçilen: ".length());
+        }
+        if (value.startsWith("Sil (")) {
+            return "Delete " + value.substring("Sil ".length());
+        }
+        if (value.startsWith("Dil: ")) {
+            return "Language: " + value.substring("Dil: ".length());
+        }
+        if (value.startsWith("Aktif dil: ")) {
+            return "Active language: " + value.substring("Aktif dil: ".length());
+        }
+        if (value.startsWith("Playlist durumu")) {
+            return value.replace("Playlist durumu", "Playlist status")
+                    .replace("Liste alınıyor...", "Loading list...")
+                    .replace("Liste alınamadı.", "List could not be loaded.")
+                    .replace(" indirildi", " downloaded")
+                    .replace(" hata", " error");
+        }
+        if (value.startsWith("Playlist indiriliyor: ")) {
+            return value.replace("Playlist indiriliyor: ", "Playlist downloading: ")
+                    .replace(" - video %", " - video %");
+        }
+        if (value.startsWith("İndiriliyor %")) {
+            return value.replace("İndiriliyor", "Downloading");
+        }
+        if (value.startsWith("Kuyruğa eklendi. Bekleyen: ")) {
+            return "Added to queue. Waiting: " + value.substring("Kuyruğa eklendi. Bekleyen: ".length());
+        }
+        if (value.endsWith(" dosya silindi")) {
+            return value.replace(" dosya silindi", " file(s) deleted");
+        }
+        if (value.endsWith(" indirme kaydı silinsin mi?")) {
+            return value.replace(" indirme kaydı silinsin mi?", " download record(s) will be deleted. Continue?");
+        }
+        if (value.startsWith("Başlık: ")) {
+            return value
+                    .replace("Başlık: ", "Title: ")
+                    .replace("\nMaksimum kalite: ", "\nMaximum quality: ")
+                    .replace("\nİndirme türü seçin:", "\nChoose download type:");
+        }
+        if (value.startsWith("Seçim: ")) {
+            return value.replace("Seçim: ", "Selection: ")
+                    .replace("\nDosya: ", "\nFile: ")
+                    .replace("\nPlaylist: ", "\nPlaylist: ")
+                    .replace(" indirildi", " downloaded")
+                    .replace("\nHata: ", "\nErrors: ")
+                    .replace("\nPlaylist dosya sayısı: ", "\nPlaylist file count: ")
+                    .replace("\nİndirilen dosya sayısı: ", "\nDownloaded file count: ")
+                    .replace("\nKlasör: ", "\nFolder: ")
+                    .replace("\nUyarı: ", "\nWarning: ");
+        }
+        return uiStatic(value);
+    }
+
+    private String uiStatic(String value) {
+        switch (value) {
+            case "Sosyal platformlar tek uygulamada": return "Social platforms in one app";
+            case "Link modu": return "Link mode";
+            case "Video linki": return "Video link";
+            case "Yapıştır": return "Paste";
+            case "Temizle": return "Clear";
+            case "İndirme seçeneklerini getir": return "Get download options";
+            case "Seçenekler hazırlanıyor...": return "Preparing options...";
+            case "Hızlı mod: kaliteyi seçin, indirme sırasında en uygun format alınacak.": return "Fast mode: choose quality, the best matching format will be used during download.";
+            case "Hızlı seçenekler hazır.": return "Fast options are ready.";
+            case "Tüm playlist'i indir": return "Download full playlist";
+            case "Listedeki tüm videoları seçilen formatla indir": return "Download every video in the list with the selected format";
+            case "Playlist modu: listedeki tüm videolar seçilen formatla indirilecek.\nİndirme türü seçin:": return "Playlist mode: every video in the list will be downloaded with the selected format.\nChoose download type:";
+            case "Playlist sayfası hazır.": return "Playlist page is ready.";
+            case "Playlist seçenekleri hazır.": return "Playlist options are ready.";
+            case "Playlist listesi alınıyor...": return "Loading playlist list...";
+            case "İndirme başlatılıyor...": return "Starting download...";
+            case "Kuyruktaki indirme başlatılıyor...": return "Starting queued download...";
+            case "Playlist tamamlandı.": return "Playlist complete.";
+            case "Playlist listesi alınamadı. Bağlantıyı kontrol edip tekrar deneyin.": return "Could not load the playlist. Check the connection and try again.";
+            case "Playlist indirilemedi. Hiç dosya tamamlanmadı.": return "Playlist could not be downloaded. No file was completed.";
+            case "Playlist durumu": return "Playlist status";
+            case "Liste alınıyor...": return "Loading list...";
+            case "Liste alınamadı.": return "List could not be loaded.";
+            case "Bekliyor": return "Waiting";
+            case "İndiriliyor": return "Downloading";
+            case "Tamamlandı": return "Done";
+            case "Atlandı": return "Skipped";
+            case "Atla": return "Skip";
+            case "Oynat": return "Play";
+            case "Hata": return "Error";
+            case "İndirme iptal edildi.": return "Download cancelled.";
+            case "Sıradaki video başlatılıyor...": return "Starting next video...";
+            case "Playlist kısmen tamamlandı.": return "Playlist partially completed.";
+            case "YouTube sunucusuna ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.": return "Could not reach the YouTube server. Check your internet/DNS connection. If you use VPN, private DNS, or an ad blocker, turn it off and try again.";
+            case "Ağ bağlantısı zaman aşımına uğradı. Bağlantıyı kontrol edip tekrar deneyin.": return "The network connection timed out. Check the connection and try again.";
+            case "Kalite seçenekleri henüz alınmadı.": return "Quality options have not been loaded yet.";
+            case "İndir": return "Download";
+            case "İptal": return "Cancel";
+            case "Başlatılıyor...": return "Starting...";
+            case "Aç": return "Open";
+            case "Paylaş": return "Share";
+            case "İndirme motorunu güncelle": return "Update download engine";
+            case "Oturumlar WebView içinde kalır. Yalnızca size ait veya indirme yetkiniz olan içerikleri indirin.": return "Sessions stay inside WebView. Download only content you own or are authorized to save.";
+            case "Platformlar": return "Platforms";
+            case "Platform seç": return "Choose platform";
+            case "paneli": return "panel";
+            case "Akışı aç": return "Open feed";
+            case "Menü": return "Menu";
+            case "Link ile indir": return "Download by link";
+            case "Paylaşılan bağlantıdan seçenekleri getir": return "Get options from a shared link";
+            case "Aktif platform akışı": return "Active platform feed";
+            case "Seçili platformda gezin": return "Browse the selected platform";
+            case "İndirilenler": return "Downloads";
+            case "Dosyaları aç veya paylaş": return "Open or share files";
+            case "Ayarlar": return "Settings";
+            case "Kalite, dil, görünüm ve bildirimler": return "Quality, language, appearance, and notifications";
+            case "Hakkında": return "About";
+            case "Ahmet Doğan ve MetaFold bilgileri": return "Ahmet Doğan and MetaFold info";
+            case "Geliştiriciye kahve ısmarla": return "Buy the developer a coffee";
+            case "IBAN kopyala": return "Copy IBAN";
+            case "IBAN kopyalandı": return "IBAN copied";
+            case "IBAN bilgisi yok": return "No IBAN info";
+            case "Destek sayfasını aç": return "Open support page";
+            case "IBAN bilgisi henüz eklenmedi. Destek hesabını bağlamak için geliştirici IBAN bilgisini eklemeli.": return "IBAN information has not been added yet. Add the developer IBAN to enable bank transfer support.";
+            case "Temalar": return "Themes";
+            case "Tema seç": return "Choose theme";
+            case "Tema değiştirildi": return "Theme changed";
+            case "Geri": return "Back";
+            case "Videoyu indir": return "Download video";
+            case "İndirilenlerde ara": return "Search downloads";
+            case "Listeyi yenile": return "Refresh list";
+            case "Tümünü seç": return "Select all";
+            case "Seçimi kaldır": return "Clear selection";
+            case "Sil": return "Delete";
+            case "Bitti": return "Done";
+            case "Henüz indirilen dosya yok.": return "No downloads yet.";
+            case "Aramaya uygun dosya bulunamadı.": return "No files match your search.";
+            case "Seçilecek dosya yok": return "No files to select";
+            case "Önce dosya seçin": return "Select a file first";
+            case "Seçilenleri sil": return "Delete selected";
+            case "Evet": return "Yes";
+            case "Vazgeç": return "Cancel";
+            case "Video ve ses": return "Video and audio";
+            case "Varsayılan kalite, format, ses tercihleri": return "Default quality, format, and audio preferences";
+            case "Varsayılan çözünürlük": return "Default resolution";
+            case "Yüksek çözünürlükleri göster": return "Show high resolutions";
+            case "2K/4K seçeneklerini kalite listesinde göster": return "Show 2K/4K options in the quality list";
+            case "Varsayılan video biçimi": return "Default video format";
+            case "Varsayılan ses biçimi": return "Default audio format";
+            case "Kalite sıralaması": return "Quality order";
+            case "Seçenekler videonun en yüksek kalitesinden aşağı sıralanır": return "Options are sorted from the video's highest quality downward";
+            case "Video indirme klasörü": return "Video download folder";
+            case "Klasör, dosya adı, deneme ve kuyruk ayarları": return "Folder, filename, retry, and queue settings";
+            case "Ses indirme klasörü": return "Audio download folder";
+            case "Dosya adlarında izin verilen karakterler": return "Allowed filename characters";
+            case "Değiştirme karakteri": return "Replacement character";
+            case "Azami deneme sayısı": return "Maximum retry count";
+            case "İndirme kuyruğu": return "Download queue";
+            case "İndirme sürerken yeni seçimleri sıraya ekle": return "Queue new selections while a download is running";
+            case "Görünüm": return "Appearance";
+            case "Tema": return "Theme";
+            case "Arayüzün sakin renk paleti": return "Calm interface color palette";
+            case "Yüksek yenileme hızı": return "High refresh rate";
+            case "Ekran destekliyorsa 90/120 Hz modunu kullan": return "Use 90/120 Hz when the screen supports it";
+            case "Platform renkleri": return "Platform colors";
+            case "Platform logoları ve indirilen kartları kendi marka rengiyle görünür": return "Platform logos and download cards keep their brand color";
+            case "Menü animasyonu": return "Menu animation";
+            case "Sol menü kayarak açılır ve kapanır": return "The drawer slides open and closed";
+            case "Veri ve önbellek": return "Data and cache";
+            case "Geçici dosyaları ve çerezleri temizle": return "Clear temporary files and cookies";
+            case "Önbelleğe alınmış meta verileri sil": return "Delete cached metadata";
+            case "Tüm geçici web ve video verilerini kaldır": return "Remove temporary web and video data";
+            case "Önbelleği temizle": return "Clear cache";
+            case "Geçici video ve web verileri silinsin mi?": return "Delete temporary video and web data?";
+            case "Önbellek temizlendi": return "Cache cleared";
+            case "Web oturum çerezlerini temizle": return "Clear web session cookies";
+            case "Uygulama içi platform girişlerini sıfırla": return "Reset in-app platform logins";
+            case "Çerezleri temizle": return "Clear cookies";
+            case "Platform girişleri ve oturum çerezleri silinsin mi?": return "Delete platform logins and session cookies?";
+            case "Çerezler temizlendi": return "Cookies cleared";
+            case "İçerik": return "Content";
+            case "Dil ve platform içerik davranışı": return "Language and platform content behavior";
+            case "Uygulama dili": return "App language";
+            case "Dil değiştirildi": return "Language changed";
+            case "Oturumlu içerik": return "Logged-in content";
+            case "Seçili platformda giriş sayfasını aç": return "Open the login page for the selected platform";
+            case "Platform akışı": return "Platform feed";
+            case "Seçili platformu uygulama içinde aç": return "Open the selected platform inside the app";
+            case "Güncellemeler": return "Updates";
+            case "Yeni sürüm bildirimi ve elle denetleme": return "New version notifications and manual checks";
+            case "Yeni sürüm olduğunda uygulama güncellemesi için bildirim göster": return "Show a notification when a new app version is available";
+            case "Güncellemeleri denetle": return "Check for updates";
+            case "Yeni sürümleri el ile denetleyin": return "Manually check for new versions";
+            case "Güncellemeler denetleniyor": return "Checking updates";
+            case "Uygulama sürümü": return "App version";
+            case "İndirme motoru sürümü": return "Download engine version";
+            case "Tam ekranı tekrar uygula": return "Reapply fullscreen";
+            case "Bildirim ve gezinme çubuklarını yeniden gizle": return "Hide notification and navigation bars again";
+            case "Tam ekran yenilendi": return "Fullscreen refreshed";
+            case "Video linki gerekli.": return "Video link is required.";
+            case "Desteklenen platformlar: YouTube, Instagram, Facebook, TikTok, Pinterest, X.": return "Supported platforms: YouTube, Instagram, Facebook, TikTok, Pinterest, X.";
+            case "Video bilgisi alınamadı.": return "Could not get video info.";
+            case "Kalite seçenekleri alınamadı.": return "Quality options could not be loaded.";
+            case "Seçenekler alınıyor...": return "Loading options...";
+            case "Oturumlu sayfa hazır.": return "Logged-in page is ready.";
+            case "Seçenekler hazır.": return "Options are ready.";
+            case "Önce indirme seçeneklerini getirip kalite seçin.": return "Get download options and choose quality first.";
+            case "MP3 için FFmpeg hazır değil.": return "FFmpeg is not ready for MP3.";
+            case "Hazırlanıyor...": return "Preparing...";
+            case "Kuyruktaki indirme hazırlanıyor...": return "Preparing queued download...";
+            case "İndirme tamamlandı.": return "Download complete.";
+            case "İndirme başarısız.": return "Download failed.";
+            case "İptal ediliyor...": return "Cancelling...";
+            case "Güncelleme başarısız.": return "Update failed.";
+            case "İndirme motoru güncelleniyor...": return "Updating download engine...";
+            case "İndirme motoru güncellendi": return "Download engine updated";
+            case "Hazir":
+            case "Hazır": return "Ready";
+            case "Önce video sayfasını açın": return "Open a video page first";
+            case "İndirme zaten çalışıyor": return "A download is already running";
+            case "İndirme sırasında güncelleme yapılamaz": return "Cannot update while downloading";
+            case "Önce bir video indirin": return "Download a video first";
+            case "Dosya bulunamadı": return "File not found";
+            case "Panoda link yok": return "No link in clipboard";
+            case "Uygun uygulama bulunamadı.": return "No suitable app found.";
+            case "Site açılamadı": return "Site could not be opened";
+            case "Klasör seçici açılamadı": return "Folder picker could not be opened";
+            case "İndirme klasörü seçildi": return "Download folder selected";
+            case "Çıkmak için tekrar geri tuşuna basın": return "Press Back again to exit";
+            case "Desteklenmeyen link": return "Unsupported link";
+            case "En iyi": return "Best";
+            case "Çoğu özel karakterler": return "Most special characters";
+            case "Kısıtlı karakterler": return "Restricted characters";
+            case "ASCII güvenli": return "ASCII safe";
+            default: return value;
+        }
+    }
+
+    private TextView textView(String value, int sp, int color, boolean bold) {
+        TextView textView = new TextView(this);
+        textView.setText(ui(value));
+        textView.setTextSize(sp);
+        textView.setTextColor(themedTextColor(color));
+        textView.setIncludeFontPadding(true);
+        if (bold) {
+            textView.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+        return textView;
+    }
+
+    private Button primaryButton(String text, int color) {
+        Button button = new Button(this);
+        button.setAllCaps(false);
+        button.setText(ui(text));
+        button.setTextSize(15);
+        button.setTextColor(readableOn(color));
+        button.setBackground(rounded(color, 8, color));
+        button.setMinHeight(dp(48));
+        return button;
+    }
+
+    private Button secondaryButton(String text) {
+        Button button = new Button(this);
+        button.setAllCaps(false);
+        button.setText(ui(text));
+        button.setTextSize(14);
+        AppThemeOption theme = currentTheme();
+        button.setTextColor(theme.textColor);
+        button.setBackground(rounded(theme.surfaceAltColor, 8, theme.borderColor));
+        button.setMinHeight(dp(44));
+        return button;
+    }
+
+    private void setButtonColor(Button button, int color) {
+        button.setBackground(rounded(color, 8, color));
+        button.setTextColor(readableOn(color));
+    }
+
+    private int themedTextColor(int color) {
+        AppThemeOption theme = currentTheme();
+        if (color == Color.rgb(23, 32, 29) || color == Color.BLACK) {
+            return theme.textColor;
+        }
+        if (color == Color.rgb(96, 112, 106)) {
+            return theme.mutedColor;
+        }
+        return color;
+    }
+
+    private int softAccent(int color) {
+        AppThemeOption theme = currentTheme();
+        if (isDarkTheme(theme)) {
+            return blend(theme.surfaceColor, color, 0.22f);
+        }
+        return lighten(color);
+    }
+
+    private int readableOn(int color) {
+        return luminance(color) > 0.62 ? Color.rgb(18, 24, 25) : Color.WHITE;
+    }
+
+    private boolean isDarkTheme(AppThemeOption theme) {
+        return luminance(theme.backgroundColor) < 0.35;
+    }
+
+    private int blend(int base, int overlay, float overlayWeight) {
+        float clamped = Math.max(0f, Math.min(1f, overlayWeight));
+        float baseWeight = 1f - clamped;
+        return Color.rgb(
+                Math.round(Color.red(base) * baseWeight + Color.red(overlay) * clamped),
+                Math.round(Color.green(base) * baseWeight + Color.green(overlay) * clamped),
+                Math.round(Color.blue(base) * baseWeight + Color.blue(overlay) * clamped)
+        );
+    }
+
+    private static double luminance(int color) {
+        return (0.2126 * Color.red(color) + 0.7152 * Color.green(color) + 0.0722 * Color.blue(color)) / 255.0;
+    }
+
+    private int topSafeInsetFallback() {
+        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            return getResources().getDimensionPixelSize(resourceId);
+        }
+        return dp(24);
+    }
+
+    private boolean shouldTintGenericIcon(int iconRes) {
+        return iconRes == R.drawable.ic_downloads
+                || iconRes == R.drawable.ic_settings
+                || iconRes == R.drawable.ic_about
+                || iconRes == R.drawable.ic_link;
+    }
+
+    private static int lighten(int color) {
+        int red = Color.red(color);
+        int green = Color.green(color);
+        int blue = Color.blue(color);
+        return Color.rgb(
+                red + Math.round((255 - red) * 0.88f),
+                green + Math.round((255 - green) * 0.88f),
+                blue + Math.round((255 - blue) * 0.88f)
+        );
+    }
+
+    private GradientDrawable rounded(int fill, int radiusDp, int stroke) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setCornerRadius(dp(radiusDp));
+        drawable.setStroke(dp(1), stroke);
+        return drawable;
+    }
+
+    private LinearLayout.LayoutParams matchWrap() {
+        return new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+    }
+
+    private LinearLayout.LayoutParams rowWeight() {
+        return new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private void toast(String text) {
+        Toast.makeText(this, ui(text), Toast.LENGTH_SHORT).show();
+    }
+
+    private static boolean hasVideo(VideoFormat format) {
+        String vcodec = format.getVcodec();
+        return vcodec == null || !"none".equalsIgnoreCase(vcodec);
+    }
+
+    private static int maxHeight(List<DownloadOption> options) {
+        int max = 0;
+        for (DownloadOption option : options) {
+            if (!option.audio && option.height > max) {
+                max = option.height;
+            }
+        }
+        return max;
+    }
+
+    private static String labelForHeight(int height) {
+        if (height >= 4320) {
+            return "8K (" + height + "p)";
+        }
+        if (height >= 2160) {
+            return "4K (" + height + "p)";
+        }
+        if (height >= 1440) {
+            return "2K (" + height + "p)";
+        }
+        return height + "p";
+    }
+
+    private static int resolutionHeight(String value) {
+        if ("4K".equals(value)) {
+            return 2160;
+        }
+        if ("2K".equals(value)) {
+            return 1440;
+        }
+        if (value != null && value.endsWith("p")) {
+            try {
+                return Integer.parseInt(value.substring(0, value.length() - 1));
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private static String videoFormatFilter(int height, String container) {
+        String heightFilter = "[height<=" + height + "]";
+        if ("webm".equals(container)) {
+            return "bestvideo" + heightFilter + "[ext=webm]+bestaudio[ext=webm]/best" + heightFilter + "[ext=webm]/best" + heightFilter + "/best";
+        }
+        return "bestvideo" + heightFilter + "[ext=mp4]+bestaudio[ext=m4a]/best" + heightFilter + "[ext=mp4]/best" + heightFilter + "/best";
+    }
+
+    private static String languageName(String language) {
+        return "en".equals(language) ? "English" : "Türkçe";
+    }
+
+    private static String readableSize(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        double kb = bytes / 1024.0;
+        if (kb < 1024) {
+            return String.format(Locale.US, "%.1f KB", kb);
+        }
+        double mb = kb / 1024.0;
+        if (mb < 1024) {
+            return String.format(Locale.US, "%.1f MB", mb);
+        }
+        return String.format(Locale.US, "%.1f GB", mb / 1024.0);
+    }
+
+    private static String firstNonEmpty(String... values) {
+        for (String value : values) {
+            if (!TextUtils.isEmpty(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private static String trimForUi(String value, int max) {
+        if (value == null || value.length() <= max) {
+            return value == null ? "" : value;
+        }
+        return value.substring(0, max) + "...";
+    }
+
+    private static void addUnique(List<String> list, String value) {
+        if (!TextUtils.isEmpty(value) && !list.contains(value)) {
+            list.add(value);
+        }
+    }
+
+    private static String hostOf(String url) {
+        try {
+            return new URI(url).getHost();
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
+    private static String cookieDomain(String host) {
+        String normalized = host.toLowerCase(Locale.US);
+        if (normalized.endsWith("youtube.com") || normalized.equals("youtu.be")) {
+            return ".youtube.com";
+        }
+        if (normalized.endsWith("google.com")) {
+            return ".google.com";
+        }
+        if (normalized.endsWith("instagram.com")) {
+            return ".instagram.com";
+        }
+        if (normalized.endsWith("facebook.com") || normalized.equals("fb.watch")) {
+            return ".facebook.com";
+        }
+        if (normalized.endsWith("tiktok.com")) {
+            return ".tiktok.com";
+        }
+        if (normalized.endsWith("pinterest.com") || normalized.equals("pin.it")) {
+            return normalized.equals("pin.it") ? ".pin.it" : ".pinterest.com";
+        }
+        if (normalized.endsWith("x.com")) {
+            return ".x.com";
+        }
+        if (normalized.endsWith("twitter.com")) {
+            return ".twitter.com";
+        }
+        return normalized.startsWith(".") ? normalized : "." + normalized;
+    }
+
+    private static SocialPlatform platformByName(String name) {
+        for (SocialPlatform platform : PLATFORMS) {
+            if (platform.name.equals(name)) {
+                return platform;
+            }
+        }
+        return null;
+    }
+
+    private static SocialPlatform platformByDetectedName(String detectedName) {
+        if (TextUtils.isEmpty(detectedName)) {
+            return null;
+        }
+        for (SocialPlatform platform : PLATFORMS) {
+            if (platform.name.equals(detectedName)) {
+                return platform;
+            }
+        }
+        return null;
+    }
+
+    private static void copy(InputStream input, OutputStream output) throws IOException {
+        byte[] buffer = new byte[1024 * 64];
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            output.write(buffer, 0, read);
+        }
+    }
+
+    private static String compactLine(String line, int max) {
+        String trimmed = line == null ? "" : line.trim();
+        if (trimmed.length() <= max) {
+            return trimmed;
+        }
+        return trimmed.substring(0, max) + "...";
+    }
+
+    private static String cleanError(Throwable error) {
+        String message = error == null ? "" : error.getMessage();
+        if (TextUtils.isEmpty(message) && error != null) {
+            message = error.toString();
+        }
+        String cleaned = stripOutdatedWarning(message == null ? "Bilinmeyen hata" : message);
+        String lower = cleaned.toLowerCase(Locale.US);
+        if (lower.contains("no address associated with hostname")
+                || lower.contains("unable to download api page")
+                || lower.contains("transporterror")
+                || lower.contains("failed to resolve")) {
+            return "YouTube sunucusuna ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.";
+        }
+        if (lower.contains("timed out") || lower.contains("connection reset") || lower.contains("network is unreachable")) {
+            return "Ağ bağlantısı zaman aşımına uğradı. Bağlantıyı kontrol edip tekrar deneyin.";
+        }
+        return compactLine(cleaned, 1200);
+    }
+
+    private static String stripOutdatedWarning(String message) {
+        String normalized = message.replace("\r\n", "\n").replace('\r', '\n').trim();
+        String lower = normalized.toLowerCase(Locale.US);
+        int warningIndex = lower.indexOf("warning: your yt-dlp version");
+        if (warningIndex < 0) {
+            return normalized;
+        }
+
+        int errorIndex = lower.indexOf("error:", warningIndex);
+        if (errorIndex > warningIndex) {
+            return (normalized.substring(0, warningIndex) + normalized.substring(errorIndex)).trim();
+        }
+        return "İndirme motoru eski sürüm uyarısı verdi. Uygulama açılışta otomatik güncelleme dener; tekrar deneyin veya indirme motorunu güncelle butonunu kullanın.";
+    }
+
+    private static final class PlaylistEntry {
+        final int index;
+        final String title;
+        final String id;
+        final String url;
+
+        PlaylistEntry(int index, String title, String id, String url) {
+            this.index = index;
+            this.title = title;
+            this.id = id;
+            this.url = url;
+        }
+    }
+
+    private static final class PlaylistDownloadResult {
+        final List<File> downloadedFiles;
+        final Uri firstUri;
+        final int successCount;
+        final int failedCount;
+        final int totalCount;
+
+        PlaylistDownloadResult(List<File> downloadedFiles, Uri firstUri, int successCount, int failedCount, int totalCount) {
+            this.downloadedFiles = downloadedFiles;
+            this.firstUri = firstUri;
+            this.successCount = successCount;
+            this.failedCount = failedCount;
+            this.totalCount = totalCount;
+        }
+    }
+
+    private static final class PlaylistStatusRow {
+        final int index;
+        final LinearLayout container;
+        final TextView titleView;
+        final TextView statusView;
+        final ProgressBar progressBar;
+        final CheckBox includeBox;
+        final Button actionButton;
+        File file;
+
+        PlaylistStatusRow(int index, LinearLayout container, TextView titleView, TextView statusView, ProgressBar progressBar, CheckBox includeBox, Button actionButton) {
+            this.index = index;
+            this.container = container;
+            this.titleView = titleView;
+            this.statusView = statusView;
+            this.progressBar = progressBar;
+            this.includeBox = includeBox;
+            this.actionButton = actionButton;
+        }
+    }
+
+    private static final class DownloadOption {
+        final String label;
+        final int height;
+        final boolean audio;
+
+        private DownloadOption(String label, int height, boolean audio) {
+            this.label = label;
+            this.height = height;
+            this.audio = audio;
+        }
+
+        static DownloadOption video(String label, int height) {
+            return new DownloadOption(label, height, false);
+        }
+
+        static DownloadOption audio(String label) {
+            return new DownloadOption(label, 0, true);
+        }
+    }
+
+    private static final class QueuedDownload {
+        final String url;
+        final String platform;
+        final DownloadOption option;
+        final boolean playlistMode;
+
+        QueuedDownload(String url, String platform, DownloadOption option, boolean playlistMode) {
+            this.url = url;
+            this.platform = platform;
+            this.option = option;
+            this.playlistMode = playlistMode;
+        }
+    }
+
+    private static final class CookieLine {
+        final String domain;
+        final String name;
+        final String value;
+
+        CookieLine(String domain, String name, String value) {
+            this.domain = domain;
+            this.name = name;
+            this.value = value;
+        }
+    }
+
+    private static final class SocialPlatform {
+        final String name;
+        final String homeUrl;
+        final int iconRes;
+        final int accentColor;
+
+        SocialPlatform(String name, String homeUrl, int iconRes, int accentColor) {
+            this.name = name;
+            this.homeUrl = homeUrl;
+            this.iconRes = iconRes;
+            this.accentColor = accentColor;
+        }
+    }
+
+    private static final class AppThemeOption {
+        final String key;
+        final String trName;
+        final String enName;
+        final String trSubtitle;
+        final String enSubtitle;
+        final int accentColor;
+        final int backgroundColor;
+        final int surfaceColor;
+        final int surfaceAltColor;
+        final int borderColor;
+        final int textColor;
+        final int mutedColor;
+        final int onAccentColor;
+
+        AppThemeOption(String key, String trName, String enName, String trSubtitle, String enSubtitle,
+                       int accentColor, int backgroundColor, int surfaceColor, int surfaceAltColor, int borderColor,
+                       int textColor, int mutedColor, int onAccentColor) {
+            this.key = key;
+            this.trName = trName;
+            this.enName = enName;
+            this.trSubtitle = trSubtitle;
+            this.enSubtitle = enSubtitle;
+            this.accentColor = accentColor;
+            this.backgroundColor = backgroundColor;
+            this.surfaceColor = surfaceColor;
+            this.surfaceAltColor = surfaceAltColor;
+            this.borderColor = borderColor;
+            this.textColor = textColor;
+            this.mutedColor = mutedColor;
+            this.onAccentColor = onAccentColor;
+        }
+    }
+
+    private static final class RefreshMode {
+        final float rate;
+        final int modeId;
+
+        RefreshMode(float rate, int modeId) {
+            this.rate = rate;
+            this.modeId = modeId;
+        }
+    }
+
+    private interface SettingValueHandler {
+        void onValue(String value);
+    }
+
+    private interface ValueLabelFormatter {
+        String label(String value);
+    }
+
+    private interface SwitchValueHandler {
+        void onValue(boolean value);
+    }
+
+    private static final class UpdateResult {
+        final String message;
+
+        UpdateResult(String message) {
+            this.message = message;
+        }
+    }
+}
