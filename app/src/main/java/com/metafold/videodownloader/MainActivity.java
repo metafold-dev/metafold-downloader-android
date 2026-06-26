@@ -20,6 +20,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
@@ -59,17 +60,24 @@ import com.yausername.youtubedl_android.YoutubeDLResponse;
 import com.yausername.youtubedl_android.mapper.VideoFormat;
 import com.yausername.youtubedl_android.mapper.VideoInfo;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Method;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
 import java.util.ArrayList;
@@ -145,6 +153,12 @@ public final class MainActivity extends Activity {
     private static final String PREF_FEED_THRESHOLD = "feed_threshold";
     private static final String PREF_DEDICATED_FEED = "dedicated_feed";
     private static final String PREF_UPDATE_NOTIFICATIONS = "update_notifications";
+    private static final String PREF_APP_UPDATE_LAST_CHECK = "app_update_last_check";
+    private static final String PREF_LICENSE_KEY = "license_key";
+    private static final String PREF_LICENSE_STATUS = "license_status";
+    private static final String PREF_LICENSE_OWNER = "license_owner";
+    private static final String PREF_LICENSE_EXPIRES_AT = "license_expires_at";
+    private static final String PREF_LICENSE_LAST_CHECK = "license_last_check";
     private static final String PREF_PLAYER_NOTIFICATION = "player_notification";
     private static final String PREF_NEW_FEED_NOTIFICATIONS = "new_feed_notifications";
     private static final String PREF_NOTIFICATION_CHECK_FREQUENCY = "notification_check_frequency";
@@ -157,6 +171,12 @@ public final class MainActivity extends Activity {
     private static final String DONATION_IBAN = "";
     private static final String DONATION_NOTE = "MetaFold Downloader kahve desteği";
     private static final String DONATION_PAYMENT_LINK = "";
+    private static final String GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/metafold-dev/metafold-downloader-android/releases/latest";
+    private static final String GITHUB_RELEASES_URL = "https://github.com/metafold-dev/metafold-downloader-android/releases/latest";
+    private static final String LICENSE_VALIDATE_URL = "";
+    private static final String LICENSE_STATUS_ACTIVE = "active";
+    private static final String LICENSE_STATUS_PENDING = "pending";
+    private static final String LICENSE_STATUS_INACTIVE = "inactive";
     private static final long BACK_EXIT_WINDOW_MS = 1800L;
     private static final long UPDATE_INTERVAL_MS = 12L * 60L * 60L * 1000L;
     private static final Pattern URL_PATTERN = Pattern.compile(
@@ -305,6 +325,8 @@ public final class MainActivity extends Activity {
                     if (pendingAutoFetch) {
                         pendingAutoFetch = false;
                         fetchFormatOptions(false);
+                    } else {
+                        maybeCheckAppUpdateOnStartup();
                     }
                 });
             } catch (Exception error) {
@@ -1215,6 +1237,7 @@ public final class MainActivity extends Activity {
         addSettingsCategory(panel, "Veri ve önbellek", "Geçici dosyaları ve çerezleri temizle", () -> renderHistoryCacheSettings(panel));
         addSettingsCategory(panel, "İçerik", "Dil ve platform içerik davranışı", () -> renderContentSettings(panel));
         addSettingsCategory(panel, "Güncellemeler", "Yeni sürüm bildirimi ve elle denetleme", () -> renderUpdateSettings(panel));
+        addSettingsCategory(panel, "Lisans", "Lisans anahtarı ve cihaz doğrulaması", () -> renderLicenseSettings(panel));
         addActionSetting(panel, "Tam ekranı tekrar uygula", "Bildirim ve gezinme çubuklarını yeniden gizle", () -> {
             enterFullscreen();
             toast("Tam ekran yenilendi");
@@ -1296,12 +1319,31 @@ public final class MainActivity extends Activity {
     private void renderUpdateSettings(LinearLayout panel) {
         renderSettingsHeader(panel, "Güncellemeler");
         addSwitchSetting(panel, "Güncellemeler", "Yeni sürüm olduğunda uygulama güncellemesi için bildirim göster", PREF_UPDATE_NOTIFICATIONS, false);
-        addActionSetting(panel, "Güncellemeleri denetle", "Yeni sürümleri el ile denetleyin", () -> {
-            toast("Güncellemeler denetleniyor");
-            updateExtractor();
-        });
-        addInfoSetting(panel, "Uygulama sürümü", "MetaFold Downloader 3.9");
+        addActionSetting(panel, "Uygulama güncellemesini denetle", "GitHub Releases üzerinden yeni APK sürümünü kontrol et", () -> checkAppUpdate(false));
+        addActionSetting(panel, "GitHub release sayfasını aç", "Yeni APK dosyaları bu repodaki release bölümünden alınır", () -> openWebsite(GITHUB_RELEASES_URL));
+        addActionSetting(panel, "İndirme motorunu güncelle", "yt-dlp çekirdeğini son kararlı sürüme yükselt", () -> updateExtractor());
+        addInfoSetting(panel, "Güncelleme kaynağı", "metafold-dev/metafold-downloader-android");
+        addInfoSetting(panel, "Uygulama sürümü", "MetaFold Downloader " + currentAppVersion());
         addInfoSetting(panel, "İndirme motoru sürümü", safeVersionName());
+    }
+
+    private void renderLicenseSettings(LinearLayout panel) {
+        renderSettingsHeader(panel, "Lisans");
+        addInfoSetting(panel, "Lisans durumu", licenseStatusText());
+        addInfoSetting(panel, "Cihaz kimliği", shortDeviceId());
+        addActionSetting(panel, "Lisans anahtarı gir", licenseKeyLabel(), () -> showLicenseDialog(panel));
+        addActionSetting(panel, "Lisansı doğrula", "Sunucudan lisans durumunu denetle", () -> validateLicense(false, panel));
+        if (!TextUtils.isEmpty(getString(PREF_LICENSE_KEY, ""))) {
+            addActionSetting(panel, "Lisansı kaldır", "Bu cihazdaki kayıtlı lisans anahtarını temizle", () -> confirm(
+                    "Lisansı kaldır",
+                    "Kayıtlı lisans anahtarı bu cihazdan silinsin mi?",
+                    () -> {
+                        clearLicense();
+                        renderLicenseSettings(panel);
+                    }
+            ));
+        }
+        addInfoSetting(panel, "Doğrulama modeli", "Anahtar + cihaz kimliği sunucuda doğrulanır; sonuç cihazda önbelleğe alınır");
     }
 
     private void renderNotificationSettings(LinearLayout panel) {
@@ -1492,6 +1534,8 @@ public final class MainActivity extends Activity {
             renderContentSettings(panel);
         } else if ("Güncellemeler".equals(page)) {
             renderUpdateSettings(panel);
+        } else if ("Lisans".equals(page)) {
+            renderLicenseSettings(panel);
         } else if ("Bildirimler".equals(page)) {
             renderNotificationSettings(panel);
         } else {
@@ -2261,6 +2305,379 @@ public final class MainActivity extends Activity {
                 .setPositiveButton(ui("Evet"), (dialog, which) -> action.run())
                 .setNegativeButton(ui("Vazgeç"), null)
                 .show();
+    }
+
+    private void maybeCheckAppUpdateOnStartup() {
+        if (!getBool(PREF_UPDATE_NOTIFICATIONS, false)) {
+            return;
+        }
+        long lastCheck = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getLong(PREF_APP_UPDATE_LAST_CHECK, 0L);
+        if (lastCheck > 0L && System.currentTimeMillis() - lastCheck < UPDATE_INTERVAL_MS) {
+            return;
+        }
+        checkAppUpdate(true);
+    }
+
+    private void checkAppUpdate(boolean silent) {
+        if (!silent) {
+            setBusy(true, "Uygulama güncellemesi denetleniyor...");
+        }
+        executor.execute(() -> {
+            try {
+                AppUpdateInfo updateInfo = fetchLatestAppUpdate();
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                        .edit()
+                        .putLong(PREF_APP_UPDATE_LAST_CHECK, System.currentTimeMillis())
+                        .apply();
+                mainHandler.post(() -> {
+                    if (!silent) {
+                        setBusy(false, null);
+                    }
+                    handleAppUpdateInfo(updateInfo, silent);
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    if (!silent) {
+                        setBusy(false, null);
+                        setStatus("Uygulama güncellemesi denetlenemedi.", false);
+                        outputView.setText(cleanError(error));
+                    }
+                });
+            }
+        });
+    }
+
+    private AppUpdateInfo fetchLatestAppUpdate() throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(GITHUB_LATEST_RELEASE_API).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(12000);
+        connection.setRequestProperty("Accept", "application/vnd.github+json");
+        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+        int code = connection.getResponseCode();
+        String body = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        if (code == HttpURLConnection.HTTP_NOT_FOUND) {
+            throw new IOException("GitHub release okunamadı. Repo private ise uygulama buraya tokensız erişemez; release veya update JSON public olmalı.");
+        }
+        if (code < 200 || code >= 300) {
+            throw new IOException("GitHub release okunamadı. HTTP " + code + ": " + body);
+        }
+
+        JSONObject json = new JSONObject(body);
+        String tagName = json.optString("tag_name", "");
+        String latestVersion = normalizeVersionTag(tagName);
+        String releaseName = json.optString("name", tagName);
+        String htmlUrl = json.optString("html_url", GITHUB_RELEASES_URL);
+        String apkUrl = "";
+        JSONArray assets = json.optJSONArray("assets");
+        if (assets != null) {
+            for (int i = 0; i < assets.length(); i++) {
+                JSONObject asset = assets.optJSONObject(i);
+                if (asset == null) {
+                    continue;
+                }
+                String assetName = asset.optString("name", "").toLowerCase(Locale.US);
+                String downloadUrl = asset.optString("browser_download_url", "");
+                if (!assetName.endsWith(".apk") || TextUtils.isEmpty(downloadUrl)) {
+                    continue;
+                }
+                if (TextUtils.isEmpty(apkUrl)
+                        || assetName.contains("universal")
+                        || (assetName.contains("arm64") && !apkUrl.toLowerCase(Locale.US).contains("universal"))) {
+                    apkUrl = downloadUrl;
+                }
+            }
+        }
+
+        String currentVersion = currentAppVersion();
+        boolean newer = compareVersions(latestVersion, currentVersion) > 0;
+        return new AppUpdateInfo(releaseName, tagName, latestVersion, currentVersion, htmlUrl, apkUrl, newer);
+    }
+
+    private void handleAppUpdateInfo(AppUpdateInfo updateInfo, boolean silent) {
+        if (updateInfo.newer) {
+            showAppUpdateDialog(updateInfo);
+            return;
+        }
+        if (!silent) {
+            setStatus("Uygulama güncel.", true);
+            new AlertDialog.Builder(this)
+                    .setTitle(ui("Uygulama güncel"))
+                    .setMessage(ui("Kurulu sürüm") + ": " + updateInfo.currentVersion + "\n" +
+                            ui("GitHub sürümü") + ": " + updateInfo.latestLabel())
+                    .setPositiveButton(ui("Tamam"), null)
+                    .show();
+        }
+    }
+
+    private void showAppUpdateDialog(AppUpdateInfo updateInfo) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(ui("Yeni sürüm hazır"))
+                .setMessage(ui("Kurulu sürüm") + ": " + updateInfo.currentVersion + "\n" +
+                        ui("Yeni sürüm") + ": " + updateInfo.latestLabel() + "\n\n" +
+                        ui("Güncelleme GitHub Releases üzerinden alınacak."))
+                .setPositiveButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl))
+                .setNegativeButton(ui("Vazgeç"), null);
+        if (!TextUtils.isEmpty(updateInfo.apkUrl)) {
+            builder.setNeutralButton(ui("APK'yı aç"), (dialog, which) -> openWebsite(updateInfo.apkUrl));
+        }
+        builder.show();
+    }
+
+    private String currentAppVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+            return "3.9";
+        }
+    }
+
+    private static String normalizeVersionTag(String value) {
+        if (value == null) {
+            return "";
+        }
+        String version = value.trim();
+        if (version.startsWith("v") || version.startsWith("V")) {
+            version = version.substring(1);
+        }
+        int dash = version.indexOf('-');
+        if (dash > 0) {
+            version = version.substring(0, dash);
+        }
+        return version;
+    }
+
+    private static int compareVersions(String left, String right) {
+        String[] leftParts = numericVersionParts(left);
+        String[] rightParts = numericVersionParts(right);
+        int count = Math.max(leftParts.length, rightParts.length);
+        for (int i = 0; i < count; i++) {
+            int leftValue = i < leftParts.length ? parsePositiveInt(leftParts[i], 0) : 0;
+            int rightValue = i < rightParts.length ? parsePositiveInt(rightParts[i], 0) : 0;
+            if (leftValue != rightValue) {
+                return leftValue - rightValue;
+            }
+        }
+        return 0;
+    }
+
+    private static String[] numericVersionParts(String version) {
+        if (TextUtils.isEmpty(version)) {
+            return new String[]{"0"};
+        }
+        String cleaned = version.replaceFirst("^[^0-9]+", "");
+        if (TextUtils.isEmpty(cleaned)) {
+            return new String[]{"0"};
+        }
+        return cleaned.split("[^0-9]+");
+    }
+
+    private void showLicenseDialog(LinearLayout panel) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        input.setText(getString(PREF_LICENSE_KEY, ""));
+        input.setSelectAllOnFocus(true);
+
+        new AlertDialog.Builder(this)
+                .setTitle(ui("Lisans anahtarı"))
+                .setMessage(ui("Satın alınan lisans anahtarını girin. Anahtar bu cihaza bağlanarak doğrulanır."))
+                .setView(input)
+                .setPositiveButton(ui("Kaydet ve doğrula"), (dialog, which) -> {
+                    String key = normalizeLicenseKey(input.getText().toString());
+                    if (TextUtils.isEmpty(key)) {
+                        toast("Lisans anahtarı boş olamaz");
+                        return;
+                    }
+                    putString(PREF_LICENSE_KEY, key);
+                    putString(PREF_LICENSE_STATUS, LICENSE_STATUS_PENDING);
+                    renderLicenseSettings(panel);
+                    validateLicense(false, panel);
+                })
+                .setNeutralButton(ui("Temizle"), (dialog, which) -> {
+                    clearLicense();
+                    renderLicenseSettings(panel);
+                })
+                .setNegativeButton(ui("Vazgeç"), null)
+                .show();
+    }
+
+    private void validateLicense(boolean silent, LinearLayout panel) {
+        String key = getString(PREF_LICENSE_KEY, "").trim();
+        if (TextUtils.isEmpty(key)) {
+            if (!silent) {
+                toast("Önce lisans anahtarı girin");
+                showLicenseDialog(panel);
+            }
+            return;
+        }
+        if (TextUtils.isEmpty(LICENSE_VALIDATE_URL)) {
+            putString(PREF_LICENSE_STATUS, LICENSE_STATUS_PENDING);
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .edit()
+                    .putLong(PREF_LICENSE_LAST_CHECK, System.currentTimeMillis())
+                    .apply();
+            if (!silent) {
+                new AlertDialog.Builder(this)
+                        .setTitle(ui("Lisans sunucusu bekleniyor"))
+                        .setMessage(ui("Lisans anahtarı kaydedildi. Gerçek doğrulama için LICENSE_VALIDATE_URL değerine lisans API adresi eklenmeli."))
+                        .setPositiveButton(ui("Tamam"), null)
+                        .show();
+                renderLicenseSettings(panel);
+            }
+            return;
+        }
+
+        if (!silent) {
+            setBusy(true, "Lisans doğrulanıyor...");
+        }
+        executor.execute(() -> {
+            try {
+                LicenseResult result = requestLicenseValidation(key);
+                mainHandler.post(() -> {
+                    if (!silent) {
+                        setBusy(false, null);
+                    }
+                    applyLicenseResult(result);
+                    if (!silent) {
+                        renderLicenseSettings(panel);
+                        new AlertDialog.Builder(this)
+                                .setTitle(ui(result.active ? "Lisans etkin" : "Lisans doğrulanamadı"))
+                                .setMessage(ui(result.message))
+                                .setPositiveButton(ui("Tamam"), null)
+                                .show();
+                    }
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    if (!silent) {
+                        setBusy(false, null);
+                        outputView.setText(cleanError(error));
+                        toast("Lisans doğrulanamadı");
+                    }
+                });
+            }
+        });
+    }
+
+    private LicenseResult requestLicenseValidation(String key) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(LICENSE_VALIDATE_URL).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(12000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+
+        JSONObject request = new JSONObject();
+        request.put("license_key", key);
+        request.put("device_id", deviceId());
+        request.put("package_name", getPackageName());
+        request.put("app_version", currentAppVersion());
+
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(request.toString().getBytes(StandardCharsets.UTF_8));
+        }
+
+        int code = connection.getResponseCode();
+        String body = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        if (code < 200 || code >= 300) {
+            throw new IOException("Lisans sunucusu HTTP " + code + ": " + body);
+        }
+
+        JSONObject response = new JSONObject(body);
+        boolean active = response.optBoolean("active", false);
+        String message = response.optString("message", active ? "Lisans etkin" : "Lisans doğrulanamadı");
+        String owner = response.optString("owner", "");
+        String expiresAt = response.optString("expires_at", "");
+        return new LicenseResult(active, message, owner, expiresAt);
+    }
+
+    private void applyLicenseResult(LicenseResult result) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(PREF_LICENSE_STATUS, result.active ? LICENSE_STATUS_ACTIVE : LICENSE_STATUS_INACTIVE)
+                .putString(PREF_LICENSE_OWNER, result.owner)
+                .putString(PREF_LICENSE_EXPIRES_AT, result.expiresAt)
+                .putLong(PREF_LICENSE_LAST_CHECK, System.currentTimeMillis())
+                .apply();
+    }
+
+    private void clearLicense() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .remove(PREF_LICENSE_KEY)
+                .remove(PREF_LICENSE_STATUS)
+                .remove(PREF_LICENSE_OWNER)
+                .remove(PREF_LICENSE_EXPIRES_AT)
+                .remove(PREF_LICENSE_LAST_CHECK)
+                .apply();
+    }
+
+    private String licenseStatusText() {
+        String status = getString(PREF_LICENSE_STATUS, "");
+        if (LICENSE_STATUS_ACTIVE.equals(status)) {
+            String owner = getString(PREF_LICENSE_OWNER, "");
+            String expiresAt = getString(PREF_LICENSE_EXPIRES_AT, "");
+            String text = "Etkin";
+            if (!TextUtils.isEmpty(owner)) {
+                text += " - " + owner;
+            }
+            if (!TextUtils.isEmpty(expiresAt)) {
+                text += " - " + expiresAt;
+            }
+            return text;
+        }
+        if (LICENSE_STATUS_PENDING.equals(status)) {
+            return "Anahtar kaydedildi, sunucu doğrulaması bekleniyor";
+        }
+        if (LICENSE_STATUS_INACTIVE.equals(status)) {
+            return "Pasif veya doğrulanamadı";
+        }
+        return "Lisans girilmedi";
+    }
+
+    private String licenseKeyLabel() {
+        String key = getString(PREF_LICENSE_KEY, "");
+        if (TextUtils.isEmpty(key)) {
+            return "Henüz lisans anahtarı girilmedi";
+        }
+        String suffix = key.length() <= 6 ? key : key.substring(key.length() - 6);
+        return "Anahtar: ******" + suffix;
+    }
+
+    private String deviceId() {
+        String androidId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+        return TextUtils.isEmpty(androidId) ? "unknown-device" : androidId;
+    }
+
+    private String shortDeviceId() {
+        String id = deviceId();
+        if (id.length() <= 8) {
+            return id;
+        }
+        return "..." + id.substring(id.length() - 8);
+    }
+
+    private static String normalizeLicenseKey(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim().replace(" ", "").toUpperCase(Locale.US);
+    }
+
+    private static String readHttpBody(InputStream stream) throws IOException {
+        if (stream == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                builder.append(line).append('\n');
+            }
+        }
+        return builder.toString().trim();
     }
 
     private void fetchFormatOptions(boolean fromBrowser) {
@@ -4348,6 +4765,51 @@ public final class MainActivity extends Activity {
             case "Yeni sürümleri el ile denetleyin": return "Manually check for new versions";
             case "Güncellemeler denetleniyor": return "Checking updates";
             case "Uygulama sürümü": return "App version";
+            case "Uygulama güncellemesini denetle": return "Check app update";
+            case "GitHub Releases üzerinden yeni APK sürümünü kontrol et": return "Check the new APK version through GitHub Releases";
+            case "GitHub release sayfasını aç": return "Open GitHub release page";
+            case "Yeni APK dosyaları bu repodaki release bölümünden alınır": return "New APK files are fetched from this repository's release section";
+            case "yt-dlp çekirdeğini son kararlı sürüme yükselt": return "Upgrade the yt-dlp core to the latest stable version";
+            case "Güncelleme kaynağı": return "Update source";
+            case "Uygulama güncellemesi denetleniyor...": return "Checking app update...";
+            case "Uygulama güncellemesi denetlenemedi.": return "App update could not be checked.";
+            case "Uygulama güncel.": return "App is up to date.";
+            case "Uygulama güncel": return "App is up to date";
+            case "Kurulu sürüm": return "Installed version";
+            case "GitHub sürümü": return "GitHub version";
+            case "Yeni sürüm hazır": return "New version is ready";
+            case "Yeni sürüm": return "New version";
+            case "Güncelleme GitHub Releases üzerinden alınacak.": return "The update will be fetched through GitHub Releases.";
+            case "Release sayfasını aç": return "Open release page";
+            case "APK'yı aç": return "Open APK";
+            case "Tamam": return "OK";
+            case "Lisans": return "License";
+            case "Lisans anahtarı ve cihaz doğrulaması": return "License key and device verification";
+            case "Lisans durumu": return "License status";
+            case "Cihaz kimliği": return "Device ID";
+            case "Lisans anahtarı gir": return "Enter license key";
+            case "Lisansı doğrula": return "Verify license";
+            case "Sunucudan lisans durumunu denetle": return "Check license status from the server";
+            case "Lisansı kaldır": return "Remove license";
+            case "Bu cihazdaki kayıtlı lisans anahtarını temizle": return "Clear the saved license key on this device";
+            case "Kayıtlı lisans anahtarı bu cihazdan silinsin mi?": return "Delete the saved license key from this device?";
+            case "Doğrulama modeli": return "Verification model";
+            case "Anahtar + cihaz kimliği sunucuda doğrulanır; sonuç cihazda önbelleğe alınır": return "The key and device ID are verified on the server; the result is cached on the device";
+            case "Lisans anahtarı": return "License key";
+            case "Satın alınan lisans anahtarını girin. Anahtar bu cihaza bağlanarak doğrulanır.": return "Enter the purchased license key. The key is verified by binding it to this device.";
+            case "Kaydet ve doğrula": return "Save and verify";
+            case "Lisans anahtarı boş olamaz": return "License key cannot be empty";
+            case "Önce lisans anahtarı girin": return "Enter a license key first";
+            case "Lisans sunucusu bekleniyor": return "Waiting for license server";
+            case "Lisans anahtarı kaydedildi. Gerçek doğrulama için LICENSE_VALIDATE_URL değerine lisans API adresi eklenmeli.": return "The license key was saved. Add the license API URL to LICENSE_VALIDATE_URL for real verification.";
+            case "Lisans doğrulanıyor...": return "Verifying license...";
+            case "Lisans etkin": return "License active";
+            case "Lisans doğrulanamadı": return "License could not be verified";
+            case "Etkin": return "Active";
+            case "Anahtar kaydedildi, sunucu doğrulaması bekleniyor": return "Key saved, waiting for server verification";
+            case "Pasif veya doğrulanamadı": return "Inactive or not verified";
+            case "Lisans girilmedi": return "No license entered";
+            case "Henüz lisans anahtarı girilmedi": return "No license key entered yet";
             case "İndirme motoru sürümü": return "Download engine version";
             case "Tam ekranı tekrar uygula": return "Reapply fullscreen";
             case "Bildirim ve gezinme çubuklarını yeniden gizle": return "Hide notification and navigation bars again";
@@ -4892,6 +5354,50 @@ public final class MainActivity extends Activity {
 
     private interface SwitchValueHandler {
         void onValue(boolean value);
+    }
+
+    private static final class AppUpdateInfo {
+        final String releaseName;
+        final String tagName;
+        final String latestVersion;
+        final String currentVersion;
+        final String htmlUrl;
+        final String apkUrl;
+        final boolean newer;
+
+        AppUpdateInfo(String releaseName, String tagName, String latestVersion, String currentVersion, String htmlUrl, String apkUrl, boolean newer) {
+            this.releaseName = releaseName;
+            this.tagName = tagName;
+            this.latestVersion = latestVersion;
+            this.currentVersion = currentVersion;
+            this.htmlUrl = htmlUrl;
+            this.apkUrl = apkUrl;
+            this.newer = newer;
+        }
+
+        String latestLabel() {
+            if (!TextUtils.isEmpty(tagName)) {
+                return tagName;
+            }
+            if (!TextUtils.isEmpty(latestVersion)) {
+                return latestVersion;
+            }
+            return releaseName;
+        }
+    }
+
+    private static final class LicenseResult {
+        final boolean active;
+        final String message;
+        final String owner;
+        final String expiresAt;
+
+        LicenseResult(boolean active, String message, String owner, String expiresAt) {
+            this.active = active;
+            this.message = message;
+            this.owner = owner;
+            this.expiresAt = expiresAt;
+        }
     }
 
     private static final class UpdateResult {

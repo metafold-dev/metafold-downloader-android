@@ -29,3 +29,31 @@ app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 ```
 
 `app-universal-debug.apk` iki ARM mimarisini birden icerir, fakat daha buyuktur.
+
+## GitHub uzerinden uygulama guncellemesi
+
+Uygulama `metafold-dev/metafold-downloader-android` reposundaki en son GitHub Release kaydini denetler.
+
+Yeni surum yayinlamak icin:
+
+1. `app/build.gradle` icindeki `versionCode` ve `versionName` degerlerini arttirin.
+2. APK'yi build edin.
+3. GitHub'da `v3.10` gibi yeni bir Release olusturun.
+4. Release asset olarak APK dosyasini ekleyin.
+
+Not: Android uygulamasi private GitHub reposuna tokensiz erisemez. Guncellemenin kullanicilarda calismasi icin release'in public erisilebilir olmasi veya public bir update JSON/API kullanilmasi gerekir. GitHub token'i APK icine gomulmemelidir.
+
+## Lisans API taslagi
+
+Lisans ekrani anahtar + cihaz kimligi ile dogrulama yapacak sekilde hazirlandi. Gercek dogrulama icin `MainActivity.java` icindeki `LICENSE_VALIDATE_URL` degerine kendi lisans API adresinizi girin.
+
+Beklenen API cevabi:
+
+```json
+{
+  "active": true,
+  "message": "Lisans etkin",
+  "owner": "Ahmet Dogan",
+  "expires_at": "2027-12-31"
+}
+```
