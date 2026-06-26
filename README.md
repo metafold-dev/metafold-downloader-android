@@ -43,17 +43,64 @@ Yeni surum yayinlamak icin:
 
 Not: Android uygulamasi private GitHub reposuna tokensiz erisemez. Guncellemenin kullanicilarda calismasi icin release'in public erisilebilir olmasi veya public bir update JSON/API kullanilmasi gerekir. GitHub token'i APK icine gomulmemelidir.
 
-## Lisans API taslagi
+## Lisans ve onay sistemi
 
-Lisans ekrani anahtar + cihaz kimligi ile dogrulama yapacak sekilde hazirlandi. Gercek dogrulama icin `MainActivity.java` icindeki `LICENSE_VALIDATE_URL` degerine kendi lisans API adresinizi girin.
+Uygulamada lisans sistemi e-posta + cihaz kimligi + yonetici onayi mantigiyla hazirlandi. Kullanici e-posta ile kayit istegi gonderir; siz backend panelinde bu istegi onayladiginizda uygulama `active: true` cevabini alir ve indirme/akis ozelliklerini kullanabilir.
+
+Gercek takip icin `MainActivity.java` icindeki su adresleri kendi API adreslerinizle doldurun:
+
+- `LICENSE_REGISTER_URL`: e-posta ile ilk kayit istegi
+- `LICENSE_VALIDATE_URL`: uygulama acilinca veya kullanici kontrol ettiginde onay/lisans durumu
+
+Kayit isteginde uygulama sunucuya sunlari gonderir:
+
+```json
+{
+  "email": "kullanici@example.com",
+  "device_id": "android-device-id",
+  "device_label": "Samsung SM-...",
+  "package_name": "com.metafold.videodownloader",
+  "app_version": "3.9"
+}
+```
+
+Backend tarafinda tutulmasi mantikli alanlar:
+
+- `email`
+- `device_id`
+- `license_key`
+- `status`: `pending`, `active`, `inactive`
+- `owner`
+- `expires_at`
+- `created_at`
+- `approved_at`
+- `approved_by`
 
 Beklenen API cevabi:
 
 ```json
 {
   "active": true,
+  "status": "active",
   "message": "Lisans etkin",
+  "email": "kullanici@example.com",
+  "license_key": "MFD-XXXX-XXXX",
+  "request_id": "REQ-1001",
   "owner": "Ahmet Dogan",
   "expires_at": "2027-12-31"
 }
 ```
+
+Onay bekleyen kullanici icin:
+
+```json
+{
+  "active": false,
+  "status": "pending",
+  "message": "Onay bekleniyor",
+  "email": "kullanici@example.com",
+  "request_id": "REQ-1001"
+}
+```
+
+Reddedilen veya suresi biten lisans icin `status: "inactive"` dondurun.

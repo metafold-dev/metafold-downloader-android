@@ -155,6 +155,8 @@ public final class MainActivity extends Activity {
     private static final String PREF_UPDATE_NOTIFICATIONS = "update_notifications";
     private static final String PREF_APP_UPDATE_LAST_CHECK = "app_update_last_check";
     private static final String PREF_LICENSE_KEY = "license_key";
+    private static final String PREF_LICENSE_EMAIL = "license_email";
+    private static final String PREF_LICENSE_REQUEST_ID = "license_request_id";
     private static final String PREF_LICENSE_STATUS = "license_status";
     private static final String PREF_LICENSE_OWNER = "license_owner";
     private static final String PREF_LICENSE_EXPIRES_AT = "license_expires_at";
@@ -173,6 +175,8 @@ public final class MainActivity extends Activity {
     private static final String DONATION_PAYMENT_LINK = "";
     private static final String GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/metafold-dev/metafold-downloader-android/releases/latest";
     private static final String GITHUB_RELEASES_URL = "https://github.com/metafold-dev/metafold-downloader-android/releases/latest";
+    private static final boolean LICENSE_REQUIRED = true;
+    private static final String LICENSE_REGISTER_URL = "";
     private static final String LICENSE_VALIDATE_URL = "";
     private static final String LICENSE_STATUS_ACTIVE = "active";
     private static final String LICENSE_STATUS_PENDING = "pending";
@@ -1330,20 +1334,22 @@ public final class MainActivity extends Activity {
     private void renderLicenseSettings(LinearLayout panel) {
         renderSettingsHeader(panel, "Lisans");
         addInfoSetting(panel, "Lisans durumu", licenseStatusText());
+        addInfoSetting(panel, "Kayıt e-postası", licenseEmailLabel());
         addInfoSetting(panel, "Cihaz kimliği", shortDeviceId());
+        addActionSetting(panel, "E-posta ile kayıt ol", "Kullanım isteği oluştur ve yönetici onayı bekle", () -> showLicenseRegistrationDialog(panel));
         addActionSetting(panel, "Lisans anahtarı gir", licenseKeyLabel(), () -> showLicenseDialog(panel));
-        addActionSetting(panel, "Lisansı doğrula", "Sunucudan lisans durumunu denetle", () -> validateLicense(false, panel));
-        if (!TextUtils.isEmpty(getString(PREF_LICENSE_KEY, ""))) {
+        addActionSetting(panel, "Onay durumunu kontrol et", "Sunucudan lisans/onay durumunu denetle", () -> validateLicense(false, panel));
+        if (!TextUtils.isEmpty(getString(PREF_LICENSE_KEY, "")) || !TextUtils.isEmpty(getString(PREF_LICENSE_EMAIL, ""))) {
             addActionSetting(panel, "Lisansı kaldır", "Bu cihazdaki kayıtlı lisans anahtarını temizle", () -> confirm(
                     "Lisansı kaldır",
-                    "Kayıtlı lisans anahtarı bu cihazdan silinsin mi?",
+                    "Kayıtlı lisans bilgileri bu cihazdan silinsin mi?",
                     () -> {
                         clearLicense();
                         renderLicenseSettings(panel);
                     }
             ));
         }
-        addInfoSetting(panel, "Doğrulama modeli", "Anahtar + cihaz kimliği sunucuda doğrulanır; sonuç cihazda önbelleğe alınır");
+        addInfoSetting(panel, "Doğrulama modeli", "E-posta/lisans anahtarı + cihaz kimliği sunucuda onaylanır; onay yoksa indirme kullanılamaz");
     }
 
     private void renderNotificationSettings(LinearLayout panel) {
@@ -1771,6 +1777,9 @@ public final class MainActivity extends Activity {
     }
 
     private void openPlatform(SocialPlatform platform) {
+        if (!ensureUsageApproved()) {
+            return;
+        }
         activePlatform = platform;
         updatePlatformHeader();
         hidePanels();
@@ -2501,12 +2510,78 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
+    private void showLicenseRegistrationDialog(LinearLayout panel) {
+        EditText emailInput = new EditText(this);
+        emailInput.setSingleLine(true);
+        emailInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        emailInput.setText(getString(PREF_LICENSE_EMAIL, ""));
+        emailInput.setHint(ui("E-posta adresi"));
+        emailInput.setSelectAllOnFocus(true);
+
+        new AlertDialog.Builder(this)
+                .setTitle(ui("E-posta ile kayıt"))
+                .setMessage(ui("E-posta adresiniz ve cihaz kimliğiniz yönetici onayına gönderilecek. Onay verilince uygulama kullanılabilir."))
+                .setView(emailInput)
+                .setPositiveButton(ui("Kayıt isteği gönder"), (dialog, which) -> {
+                    String email = normalizeEmail(emailInput.getText().toString());
+                    if (!isValidEmail(email)) {
+                        toast("Geçerli bir e-posta girin");
+                        return;
+                    }
+                    registerLicenseEmail(email, panel);
+                })
+                .setNegativeButton(ui("Vazgeç"), null)
+                .show();
+    }
+
+    private void registerLicenseEmail(String email, LinearLayout panel) {
+        putString(PREF_LICENSE_EMAIL, email);
+        putString(PREF_LICENSE_STATUS, LICENSE_STATUS_PENDING);
+        if (TextUtils.isEmpty(LICENSE_REGISTER_URL)) {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .edit()
+                    .putLong(PREF_LICENSE_LAST_CHECK, System.currentTimeMillis())
+                    .apply();
+            new AlertDialog.Builder(this)
+                    .setTitle(ui("Onay bekleniyor"))
+                    .setMessage(ui("Kayıt isteği cihazda hazırlandı. Gerçek onay takibi için LICENSE_REGISTER_URL değerine kayıt API adresi eklenmeli."))
+                    .setPositiveButton(ui("Tamam"), null)
+                    .show();
+            renderLicenseSettings(panel);
+            return;
+        }
+
+        setBusy(true, "Kayıt isteği gönderiliyor...");
+        executor.execute(() -> {
+            try {
+                LicenseResult result = requestLicenseRegistration(email);
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    applyLicenseResult(result);
+                    renderLicenseSettings(panel);
+                    new AlertDialog.Builder(this)
+                            .setTitle(ui(result.active ? "Lisans etkin" : "Onay bekleniyor"))
+                            .setMessage(ui(result.message))
+                            .setPositiveButton(ui("Tamam"), null)
+                            .show();
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    outputView.setText(cleanError(error));
+                    toast("Kayıt isteği gönderilemedi");
+                });
+            }
+        });
+    }
+
     private void validateLicense(boolean silent, LinearLayout panel) {
         String key = getString(PREF_LICENSE_KEY, "").trim();
-        if (TextUtils.isEmpty(key)) {
+        String email = getString(PREF_LICENSE_EMAIL, "").trim();
+        if (TextUtils.isEmpty(key) && TextUtils.isEmpty(email)) {
             if (!silent) {
-                toast("Önce lisans anahtarı girin");
-                showLicenseDialog(panel);
+                toast("Önce e-posta ile kayıt olun");
+                showLicenseRegistrationDialog(panel);
             }
             return;
         }
@@ -2519,7 +2594,7 @@ public final class MainActivity extends Activity {
             if (!silent) {
                 new AlertDialog.Builder(this)
                         .setTitle(ui("Lisans sunucusu bekleniyor"))
-                        .setMessage(ui("Lisans anahtarı kaydedildi. Gerçek doğrulama için LICENSE_VALIDATE_URL değerine lisans API adresi eklenmeli."))
+                        .setMessage(ui("Lisans bilgisi kaydedildi. Gerçek doğrulama için LICENSE_VALIDATE_URL değerine lisans API adresi eklenmeli."))
                         .setPositiveButton(ui("Tamam"), null)
                         .show();
                 renderLicenseSettings(panel);
@@ -2532,7 +2607,7 @@ public final class MainActivity extends Activity {
         }
         executor.execute(() -> {
             try {
-                LicenseResult result = requestLicenseValidation(key);
+                LicenseResult result = requestLicenseValidation(key, email);
                 mainHandler.post(() -> {
                     if (!silent) {
                         setBusy(false, null);
@@ -2559,7 +2634,32 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private LicenseResult requestLicenseValidation(String key) throws Exception {
+    private LicenseResult requestLicenseRegistration(String email) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(LICENSE_REGISTER_URL).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(12000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+
+        JSONObject request = baseLicenseRequest();
+        request.put("email", email);
+
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(request.toString().getBytes(StandardCharsets.UTF_8));
+        }
+
+        int code = connection.getResponseCode();
+        String body = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        if (code < 200 || code >= 300) {
+            throw new IOException("Lisans kayıt sunucusu HTTP " + code + ": " + body);
+        }
+        return licenseResultFromJson(new JSONObject(body), email);
+    }
+
+    private LicenseResult requestLicenseValidation(String key, String email) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(LICENSE_VALIDATE_URL).openConnection();
         connection.setConnectTimeout(12000);
         connection.setReadTimeout(12000);
@@ -2569,11 +2669,9 @@ public final class MainActivity extends Activity {
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
 
-        JSONObject request = new JSONObject();
+        JSONObject request = baseLicenseRequest();
         request.put("license_key", key);
-        request.put("device_id", deviceId());
-        request.put("package_name", getPackageName());
-        request.put("app_version", currentAppVersion());
+        request.put("email", email);
 
         try (OutputStream output = connection.getOutputStream()) {
             output.write(request.toString().getBytes(StandardCharsets.UTF_8));
@@ -2585,28 +2683,58 @@ public final class MainActivity extends Activity {
             throw new IOException("Lisans sunucusu HTTP " + code + ": " + body);
         }
 
-        JSONObject response = new JSONObject(body);
-        boolean active = response.optBoolean("active", false);
-        String message = response.optString("message", active ? "Lisans etkin" : "Lisans doğrulanamadı");
+        return licenseResultFromJson(new JSONObject(body), email);
+    }
+
+    private JSONObject baseLicenseRequest() throws Exception {
+        JSONObject request = new JSONObject();
+        request.put("device_id", deviceId());
+        request.put("package_name", getPackageName());
+        request.put("app_version", currentAppVersion());
+        request.put("device_label", Build.MANUFACTURER + " " + Build.MODEL);
+        return request;
+    }
+
+    private LicenseResult licenseResultFromJson(JSONObject response, String fallbackEmail) {
+        String responseStatus = response.optString("status", "");
+        boolean active = response.optBoolean("active", false) || LICENSE_STATUS_ACTIVE.equalsIgnoreCase(responseStatus);
+        String status = active ? LICENSE_STATUS_ACTIVE : responseStatus;
+        if (!LICENSE_STATUS_INACTIVE.equals(status) && !LICENSE_STATUS_ACTIVE.equals(status)) {
+            status = LICENSE_STATUS_PENDING;
+        }
+        String message = response.optString("message", active ? "Lisans etkin" : "Onay bekleniyor");
         String owner = response.optString("owner", "");
         String expiresAt = response.optString("expires_at", "");
-        return new LicenseResult(active, message, owner, expiresAt);
+        String licenseKey = normalizeLicenseKey(response.optString("license_key", ""));
+        String email = normalizeEmail(response.optString("email", fallbackEmail));
+        String requestId = response.optString("request_id", "");
+        return new LicenseResult(active, status, message, owner, expiresAt, licenseKey, email, requestId);
     }
 
     private void applyLicenseResult(LicenseResult result) {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .edit()
-                .putString(PREF_LICENSE_STATUS, result.active ? LICENSE_STATUS_ACTIVE : LICENSE_STATUS_INACTIVE)
+        SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(PREF_LICENSE_STATUS, result.status)
                 .putString(PREF_LICENSE_OWNER, result.owner)
                 .putString(PREF_LICENSE_EXPIRES_AT, result.expiresAt)
-                .putLong(PREF_LICENSE_LAST_CHECK, System.currentTimeMillis())
-                .apply();
+                .putLong(PREF_LICENSE_LAST_CHECK, System.currentTimeMillis());
+        if (!TextUtils.isEmpty(result.licenseKey)) {
+            editor.putString(PREF_LICENSE_KEY, result.licenseKey);
+        }
+        if (!TextUtils.isEmpty(result.email)) {
+            editor.putString(PREF_LICENSE_EMAIL, result.email);
+        }
+        if (!TextUtils.isEmpty(result.requestId)) {
+            editor.putString(PREF_LICENSE_REQUEST_ID, result.requestId);
+        }
+        editor.apply();
     }
 
     private void clearLicense() {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .edit()
                 .remove(PREF_LICENSE_KEY)
+                .remove(PREF_LICENSE_EMAIL)
+                .remove(PREF_LICENSE_REQUEST_ID)
                 .remove(PREF_LICENSE_STATUS)
                 .remove(PREF_LICENSE_OWNER)
                 .remove(PREF_LICENSE_EXPIRES_AT)
@@ -2637,6 +2765,15 @@ public final class MainActivity extends Activity {
         return "Lisans girilmedi";
     }
 
+    private String licenseEmailLabel() {
+        String email = getString(PREF_LICENSE_EMAIL, "");
+        if (TextUtils.isEmpty(email)) {
+            return "Henüz e-posta ile kayıt olunmadı";
+        }
+        String requestId = getString(PREF_LICENSE_REQUEST_ID, "");
+        return TextUtils.isEmpty(requestId) ? email : email + " - " + requestId;
+    }
+
     private String licenseKeyLabel() {
         String key = getString(PREF_LICENSE_KEY, "");
         if (TextUtils.isEmpty(key)) {
@@ -2644,6 +2781,37 @@ public final class MainActivity extends Activity {
         }
         String suffix = key.length() <= 6 ? key : key.substring(key.length() - 6);
         return "Anahtar: ******" + suffix;
+    }
+
+    private boolean ensureUsageApproved() {
+        if (isLicenseActive()) {
+            return true;
+        }
+        showLicenseRequiredDialog();
+        return false;
+    }
+
+    private boolean isLicenseActive() {
+        return !LICENSE_REQUIRED || LICENSE_STATUS_ACTIVE.equals(getString(PREF_LICENSE_STATUS, ""));
+    }
+
+    private void showLicenseRequiredDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(ui("Onay gerekli"))
+                .setMessage(ui("Bu özelliği kullanmak için e-posta ile kayıt olunmalı ve yönetici onayı verilmelidir."))
+                .setPositiveButton(ui("E-posta ile kayıt ol"), (dialog, which) -> {
+                    openLicenseSettings();
+                    showLicenseRegistrationDialog(settingsPanel);
+                })
+                .setNeutralButton(ui("Lisans ekranı"), (dialog, which) -> openLicenseSettings())
+                .setNegativeButton(ui("Vazgeç"), null)
+                .show();
+    }
+
+    private void openLicenseSettings() {
+        hidePanels();
+        settingsPanel.setVisibility(View.VISIBLE);
+        renderLicenseSettings(settingsPanel);
     }
 
     private String deviceId() {
@@ -2666,6 +2834,18 @@ public final class MainActivity extends Activity {
         return value.trim().replace(" ", "").toUpperCase(Locale.US);
     }
 
+    private static String normalizeEmail(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.US);
+    }
+
+    private static boolean isValidEmail(String value) {
+        return !TextUtils.isEmpty(value)
+                && value.length() <= 254
+                && value.contains("@")
+                && value.indexOf('@') > 0
+                && value.lastIndexOf('.') > value.indexOf('@') + 1;
+    }
+
     private static String readHttpBody(InputStream stream) throws IOException {
         if (stream == null) {
             return "";
@@ -2681,6 +2861,9 @@ public final class MainActivity extends Activity {
     }
 
     private void fetchFormatOptions(boolean fromBrowser) {
+        if (!ensureUsageApproved()) {
+            return;
+        }
         String normalizedUrl = normalizeUrl(urlInput.getText().toString().trim());
         String platform = detectPlatform(normalizedUrl);
         if (TextUtils.isEmpty(normalizedUrl)) {
@@ -2875,6 +3058,9 @@ public final class MainActivity extends Activity {
     }
 
     private void startDownload() {
+        if (!ensureUsageApproved()) {
+            return;
+        }
         String normalizedUrl = normalizeUrl(urlInput.getText().toString().trim());
         String platform = detectPlatform(normalizedUrl);
 
@@ -4786,22 +4972,34 @@ public final class MainActivity extends Activity {
             case "Lisans": return "License";
             case "Lisans anahtarı ve cihaz doğrulaması": return "License key and device verification";
             case "Lisans durumu": return "License status";
+            case "Kayıt e-postası": return "Registration email";
             case "Cihaz kimliği": return "Device ID";
+            case "E-posta ile kayıt ol": return "Register with email";
+            case "Kullanım isteği oluştur ve yönetici onayı bekle": return "Create a usage request and wait for admin approval";
             case "Lisans anahtarı gir": return "Enter license key";
-            case "Lisansı doğrula": return "Verify license";
-            case "Sunucudan lisans durumunu denetle": return "Check license status from the server";
+            case "Onay durumunu kontrol et": return "Check approval status";
+            case "Sunucudan lisans/onay durumunu denetle": return "Check license/approval status from the server";
             case "Lisansı kaldır": return "Remove license";
             case "Bu cihazdaki kayıtlı lisans anahtarını temizle": return "Clear the saved license key on this device";
-            case "Kayıtlı lisans anahtarı bu cihazdan silinsin mi?": return "Delete the saved license key from this device?";
+            case "Kayıtlı lisans bilgileri bu cihazdan silinsin mi?": return "Delete the saved license information from this device?";
             case "Doğrulama modeli": return "Verification model";
-            case "Anahtar + cihaz kimliği sunucuda doğrulanır; sonuç cihazda önbelleğe alınır": return "The key and device ID are verified on the server; the result is cached on the device";
+            case "E-posta/lisans anahtarı + cihaz kimliği sunucuda onaylanır; onay yoksa indirme kullanılamaz": return "Email/license key and device ID are approved on the server; downloads are unavailable without approval";
             case "Lisans anahtarı": return "License key";
             case "Satın alınan lisans anahtarını girin. Anahtar bu cihaza bağlanarak doğrulanır.": return "Enter the purchased license key. The key is verified by binding it to this device.";
             case "Kaydet ve doğrula": return "Save and verify";
             case "Lisans anahtarı boş olamaz": return "License key cannot be empty";
-            case "Önce lisans anahtarı girin": return "Enter a license key first";
+            case "E-posta adresi": return "Email address";
+            case "E-posta ile kayıt": return "Register with email";
+            case "E-posta adresiniz ve cihaz kimliğiniz yönetici onayına gönderilecek. Onay verilince uygulama kullanılabilir.": return "Your email address and device ID will be sent for admin approval. The app can be used after approval.";
+            case "Kayıt isteği gönder": return "Send registration request";
+            case "Geçerli bir e-posta girin": return "Enter a valid email";
+            case "Onay bekleniyor": return "Waiting for approval";
+            case "Kayıt isteği cihazda hazırlandı. Gerçek onay takibi için LICENSE_REGISTER_URL değerine kayıt API adresi eklenmeli.": return "The registration request was prepared on this device. Add the registration API URL to LICENSE_REGISTER_URL for real approval tracking.";
+            case "Kayıt isteği gönderiliyor...": return "Sending registration request...";
+            case "Kayıt isteği gönderilemedi": return "Registration request could not be sent";
+            case "Önce e-posta ile kayıt olun": return "Register with email first";
             case "Lisans sunucusu bekleniyor": return "Waiting for license server";
-            case "Lisans anahtarı kaydedildi. Gerçek doğrulama için LICENSE_VALIDATE_URL değerine lisans API adresi eklenmeli.": return "The license key was saved. Add the license API URL to LICENSE_VALIDATE_URL for real verification.";
+            case "Lisans bilgisi kaydedildi. Gerçek doğrulama için LICENSE_VALIDATE_URL değerine lisans API adresi eklenmeli.": return "The license info was saved. Add the license API URL to LICENSE_VALIDATE_URL for real verification.";
             case "Lisans doğrulanıyor...": return "Verifying license...";
             case "Lisans etkin": return "License active";
             case "Lisans doğrulanamadı": return "License could not be verified";
@@ -4810,6 +5008,10 @@ public final class MainActivity extends Activity {
             case "Pasif veya doğrulanamadı": return "Inactive or not verified";
             case "Lisans girilmedi": return "No license entered";
             case "Henüz lisans anahtarı girilmedi": return "No license key entered yet";
+            case "Henüz e-posta ile kayıt olunmadı": return "No email registration yet";
+            case "Onay gerekli": return "Approval required";
+            case "Bu özelliği kullanmak için e-posta ile kayıt olunmalı ve yönetici onayı verilmelidir.": return "To use this feature, register with email and wait for admin approval.";
+            case "Lisans ekranı": return "License screen";
             case "İndirme motoru sürümü": return "Download engine version";
             case "Tam ekranı tekrar uygula": return "Reapply fullscreen";
             case "Bildirim ve gezinme çubuklarını yeniden gizle": return "Hide notification and navigation bars again";
@@ -5388,15 +5590,23 @@ public final class MainActivity extends Activity {
 
     private static final class LicenseResult {
         final boolean active;
+        final String status;
         final String message;
         final String owner;
         final String expiresAt;
+        final String licenseKey;
+        final String email;
+        final String requestId;
 
-        LicenseResult(boolean active, String message, String owner, String expiresAt) {
+        LicenseResult(boolean active, String status, String message, String owner, String expiresAt, String licenseKey, String email, String requestId) {
             this.active = active;
+            this.status = status;
             this.message = message;
             this.owner = owner;
             this.expiresAt = expiresAt;
+            this.licenseKey = licenseKey;
+            this.email = email;
+            this.requestId = requestId;
         }
     }
 
