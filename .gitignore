@@ -3,3 +3,9 @@ build/
 app/build/
 local.properties
 *.iml
+firebase/.firebaserc
+firebase/.firebase/
+firebase/firebase-debug.log
+firebase/functions/node_modules/
+firebase/functions/.env
+firebase/functions/.runtimeconfig.json

@@ -52,6 +52,8 @@ Gercek takip icin `MainActivity.java` icindeki su adresleri kendi API adreslerin
 - `LICENSE_REGISTER_URL`: e-posta ile ilk kayit istegi
 - `LICENSE_VALIDATE_URL`: uygulama acilinca veya kullanici kontrol ettiginde onay/lisans durumu
 
+Bu uygulama icin Firebase tarafini diger MetaFold projelerinden ayri tutmak amaciyla `firebase/` klasorunde bagimsiz proje iskeleti hazirlandi. Oradaki `firebase/README.md` dosyasi yeni Firebase projesi, Cloud Functions, Firestore kurallari ve admin onay paneli kurulumunu anlatir.
+
 Kayit isteginde uygulama sunucuya sunlari gonderir:
 
 ```json
