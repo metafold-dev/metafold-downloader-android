@@ -78,6 +78,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.text.DateFormat;
@@ -187,6 +188,7 @@ public final class MainActivity extends Activity {
     private static final String DONATION_IBAN = "";
     private static final String DONATION_NOTE = "MetaFold Downloader kahve desteği";
     private static final String DONATION_PAYMENT_LINK = "";
+    private static final String LICENSE_WHATSAPP_NUMBER = "905357309054";
     private static final String GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/metafold-dev/metafold-downloader-android/releases/latest";
     private static final String GITHUB_RELEASES_URL = "https://github.com/metafold-dev/metafold-downloader-android/releases/latest";
     private static final boolean LICENSE_REQUIRED = true;
@@ -935,6 +937,12 @@ public final class MainActivity extends Activity {
         primaryParams.topMargin = dp(12);
         card.addView(primary, primaryParams);
 
+        Button buyLicense = primaryButton("Lisans satın al (WhatsApp)", Color.rgb(37, 211, 102));
+        buyLicense.setOnClickListener(v -> openWhatsAppLicensePurchase(emailInput.getText().toString()));
+        LinearLayout.LayoutParams buyParams = matchWrap();
+        buyParams.topMargin = dp(8);
+        card.addView(buyLicense, buyParams);
+
         Button switchMode = secondaryButton(loginMode ? "Hesab\u0131n\u0131z yok mu? Kay\u0131t ol" : "Zaten hesab\u0131n\u0131z var m\u0131? Giri\u015f yap");
         switchMode.setOnClickListener(v -> renderAuthPanel(panel, !loginMode));
         LinearLayout.LayoutParams switchParams = matchWrap();
@@ -1560,6 +1568,7 @@ public final class MainActivity extends Activity {
         addInfoSetting(panel, "Cihaz kimliği", shortDeviceId());
         addInfoSetting(panel, "Lisanslı cihaz", licenseDeviceLabel());
         addInfoSetting(panel, "Cihaz değişim kilidi", licenseDeviceChangeLabel());
+        addActionSetting(panel, "Lisans satın al (WhatsApp)", "Ahmet Doğan'a lisans isteği gönder", () -> openWhatsAppLicensePurchase(currentAuthEmail()));
         if (!isSignedIn()) {
             addActionSetting(panel, "Kayıt / giriş ekranı", "E-posta ve şifre ile oturum aç", () -> showAuthPanel(false));
         } else {
@@ -2566,6 +2575,25 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void openWhatsAppLicensePurchase(String rawEmail) {
+        String email = normalizeEmail(firstNonEmpty(rawEmail, currentAuthEmail(), getString(PREF_LICENSE_EMAIL, "")));
+        StringBuilder message = new StringBuilder();
+        message.append("Merhaba, MetaFold Downloader lisansı satın almak istiyorum.");
+        if (!TextUtils.isEmpty(email)) {
+            message.append("\nE-posta: ").append(email);
+        }
+        message.append("\nCihaz: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL);
+        message.append("\nCihaz ID: ").append(shortDeviceId());
+        message.append("\nSürüm: ").append(currentAppVersion());
+        try {
+            String encoded = URLEncoder.encode(message.toString(), "UTF-8");
+            String url = "https://wa.me/" + LICENSE_WHATSAPP_NUMBER + "?text=" + encoded;
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception error) {
+            toast("WhatsApp açılamadı");
+        }
+    }
+
     private void chooseDownloadFolder(int requestCode) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -2891,13 +2919,15 @@ public final class MainActivity extends Activity {
                         renderLicenseSettings(settingsPanel);
                     }
                     showDownloader();
-                    new AlertDialog.Builder(this)
+                    AlertDialog.Builder builder = new AlertDialog.Builder(this)
                             .setTitle(ui(result.active ? "Lisans etkin" : "Onay bekleniyor"))
                             .setMessage(ui(result.active
                                     ? "Hesab\u0131n\u0131z onayl\u0131. Uygulamay\u0131 kullanabilirsiniz."
-                                    : "Kay\u0131t iste\u011finiz al\u0131nd\u0131. Y\u00f6netici onay\u0131ndan sonra indirme \u00f6zellikleri a\u00e7\u0131l\u0131r."))
-                            .setPositiveButton(ui("Tamam"), null)
-                            .show();
+                                    : "Kay\u0131t iste\u011finiz al\u0131nd\u0131. Y\u00f6netici onay\u0131ndan sonra indirme \u00f6zellikleri a\u00e7\u0131l\u0131r."));
+                    if (!result.active) {
+                        builder.setNeutralButton(ui("Lisans satın al"), (dialog, which) -> openWhatsAppLicensePurchase(session.email));
+                    }
+                    builder.setPositiveButton(ui("Tamam"), null).show();
                 });
             } catch (Exception error) {
                 mainHandler.post(() -> {
@@ -6044,6 +6074,10 @@ public final class MainActivity extends Activity {
             case "Cihaz değişimi yapıldı. Bu hesap 7 gün boyunca bu cihaza bağlı kalacak.": return "Device change completed. This account will stay bound to this device for 7 days.";
             case "Cihaz değişimi şu anda yapılamıyor. Yeniden denemeden önce lisans ekranından onay durumunu kontrol edin.": return "Device change is not available right now. Check approval status on the license screen before trying again.";
             case "Lisans": return "License";
+            case "Lisans satın al": return "Buy license";
+            case "Lisans satın al (WhatsApp)": return "Buy license (WhatsApp)";
+            case "Ahmet Doğan'a lisans isteği gönder": return "Send a license request to Ahmet Dogan";
+            case "WhatsApp açılamadı": return "WhatsApp could not be opened";
             case "Lisans anahtarı ve cihaz doğrulaması": return "License key and device verification";
             case "Lisans durumu": return "License status";
             case "Kayıt e-postası": return "Registration email";
