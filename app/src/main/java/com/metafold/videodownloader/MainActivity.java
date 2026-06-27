@@ -240,8 +240,9 @@ public final class MainActivity extends Activity {
     private final Set<Integer> skippedPlaylistIndexes = new HashSet<>();
     private final Map<Integer, File> playlistDownloadedFiles = new LinkedHashMap<>();
 
-    private LinearLayout downloadPanel;
     private LinearLayout authPanel;
+    private LinearLayout homePanel;
+    private LinearLayout downloadPanel;
     private LinearLayout browserPanel;
     private LinearLayout downloadsPanel;
     private LinearLayout settingsPanel;
@@ -453,8 +454,9 @@ public final class MainActivity extends Activity {
         if ((browserPanel != null && browserPanel.getVisibility() == View.VISIBLE)
                 || (downloadsPanel != null && downloadsPanel.getVisibility() == View.VISIBLE)
                 || (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE)
-                || (aboutPanel != null && aboutPanel.getVisibility() == View.VISIBLE)) {
-            showDownloader();
+                || (aboutPanel != null && aboutPanel.getVisibility() == View.VISIBLE)
+                || (downloadPanel != null && downloadPanel.getVisibility() == View.VISIBLE)) {
+            showHome();
             return;
         }
         long now = System.currentTimeMillis();
@@ -634,6 +636,11 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams authParams = matchWrap();
         authParams.topMargin = dp(12);
         root.addView(authPanel, authParams);
+
+        homePanel = createHomePanel();
+        LinearLayout.LayoutParams homeParams = matchWrap();
+        homeParams.topMargin = dp(12);
+        root.addView(homePanel, homeParams);
 
         downloadPanel = new LinearLayout(this);
         downloadPanel.setOrientation(LinearLayout.VERTICAL);
@@ -822,10 +829,12 @@ public final class MainActivity extends Activity {
 
         if (isSignedIn()) {
             authPanel.setVisibility(View.GONE);
+            downloadPanel.setVisibility(View.GONE);
             if (appHeaderView != null) {
                 appHeaderView.setVisibility(View.VISIBLE);
             }
         } else {
+            homePanel.setVisibility(View.GONE);
             downloadPanel.setVisibility(View.GONE);
             if (appHeaderView != null) {
                 appHeaderView.setVisibility(View.GONE);
@@ -841,6 +850,139 @@ public final class MainActivity extends Activity {
         forceDrawerClosed();
 
         return appFrame;
+    }
+
+    private LinearLayout createHomePanel() {
+        AppThemeOption theme = currentTheme();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(dp(16), dp(16), dp(16), dp(16));
+        hero.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+        panel.addView(hero, matchWrap());
+
+        LinearLayout brandRow = new LinearLayout(this);
+        brandRow.setOrientation(LinearLayout.HORIZONTAL);
+        brandRow.setGravity(Gravity.CENTER_VERTICAL);
+        hero.addView(brandRow, matchWrap());
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.app_icon);
+        brandRow.addView(logo, new LinearLayout.LayoutParams(dp(58), dp(58)));
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams titleBlockParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        titleBlockParams.leftMargin = dp(12);
+        brandRow.addView(titleBlock, titleBlockParams);
+
+        TextView title = textView("MetaFold Downloader", 24, theme.textColor, true);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        titleBlock.addView(title);
+
+        TextView subtitle = textView("Sosyal platformlar tek uygulamada", 13, theme.mutedColor, false);
+        titleBlock.addView(subtitle);
+
+        TextView intro = textView("Video bağlantılarını kalite seçerek indirin, platform akışlarına uygulama içinden geçin ve lisans/güncellemeleri tek yerden yönetin.", 14, theme.textColor, false);
+        intro.setPadding(0, dp(14), 0, 0);
+        hero.addView(intro);
+
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams actionParams = matchWrap();
+        actionParams.topMargin = dp(14);
+        hero.addView(actionRow, actionParams);
+
+        Button linkDownload = primaryButton("Link ile indir", theme.accentColor);
+        linkDownload.setOnClickListener(v -> showDownloader());
+        actionRow.addView(linkDownload, rowWeight());
+
+        Button downloads = secondaryButton("İndirilenler");
+        downloads.setOnClickListener(v -> showDownloads());
+        LinearLayout.LayoutParams downloadsParams = rowWeight();
+        downloadsParams.leftMargin = dp(8);
+        actionRow.addView(downloads, downloadsParams);
+
+        TextView platformTitle = textView("Platform kısayolları", 16, theme.textColor, true);
+        LinearLayout.LayoutParams platformTitleParams = matchWrap();
+        platformTitleParams.topMargin = dp(16);
+        panel.addView(platformTitle, platformTitleParams);
+
+        HorizontalScrollView platformScroll = new HorizontalScrollView(this);
+        platformScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout platformRow = new LinearLayout(this);
+        platformRow.setOrientation(LinearLayout.HORIZONTAL);
+        platformScroll.addView(platformRow, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT
+        ));
+        for (SocialPlatform platform : PLATFORMS) {
+            platformRow.addView(homePlatformShortcut(platform));
+        }
+        LinearLayout.LayoutParams platformParams = matchWrap();
+        platformParams.topMargin = dp(8);
+        panel.addView(platformScroll, platformParams);
+
+        LinearLayout infoPanel = new LinearLayout(this);
+        infoPanel.setOrientation(LinearLayout.VERTICAL);
+        infoPanel.setPadding(dp(14), dp(14), dp(14), dp(14));
+        infoPanel.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+        LinearLayout.LayoutParams infoParams = matchWrap();
+        infoParams.topMargin = dp(14);
+        panel.addView(infoPanel, infoParams);
+
+        infoPanel.addView(textView("Hızlı başlangıç", 16, theme.textColor, true));
+        TextView info = textView("Bir platform akışını açabilir, başka uygulamadan paylaşılan linki yakalayabilir veya linki buraya yapıştırıp MP3/720p/1080p gibi seçeneklerle indirebilirsiniz.", 13, theme.mutedColor, false);
+        info.setPadding(0, dp(6), 0, 0);
+        infoPanel.addView(info);
+
+        LinearLayout infoActions = new LinearLayout(this);
+        infoActions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams infoActionParams = matchWrap();
+        infoActionParams.topMargin = dp(12);
+        infoPanel.addView(infoActions, infoActionParams);
+
+        Button settings = secondaryButton("Ayarlar");
+        settings.setOnClickListener(v -> showSettings());
+        infoActions.addView(settings, rowWeight());
+
+        Button about = secondaryButton("Hakkında");
+        about.setOnClickListener(v -> showAbout());
+        LinearLayout.LayoutParams aboutParams = rowWeight();
+        aboutParams.leftMargin = dp(8);
+        infoActions.addView(about, aboutParams);
+
+        return panel;
+    }
+
+    private View homePlatformShortcut(SocialPlatform platform) {
+        AppThemeOption theme = currentTheme();
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setPadding(dp(10), dp(10), dp(10), dp(10));
+        item.setBackground(rounded(softAccent(platform.accentColor), 8, platform.accentColor));
+        item.setOnClickListener(v -> openPlatform(platform));
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(platform.iconRes);
+        item.addView(icon, new LinearLayout.LayoutParams(dp(42), dp(42)));
+
+        TextView name = textView(platform.name, 12, theme.textColor, true);
+        name.setGravity(Gravity.CENTER);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams nameParams = matchWrap();
+        nameParams.topMargin = dp(6);
+        item.addView(name, nameParams);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(96), LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.rightMargin = dp(8);
+        item.setLayoutParams(params);
+        return item;
     }
 
     private LinearLayout createAuthPanel() {
@@ -1141,6 +1283,10 @@ public final class MainActivity extends Activity {
         }
 
         addDrawerSection("Menü");
+        addDrawerItem("Ana ekran", "Tanıtım ve hızlı kısayollar", R.drawable.ic_home, () -> {
+            closeDrawer();
+            showHome();
+        });
         addDrawerItem("Link ile indir", "Paylaşılan bağlantıdan seçenekleri getir", R.drawable.ic_link, () -> {
             closeDrawer();
             showDownloader();
@@ -1311,6 +1457,7 @@ public final class MainActivity extends Activity {
                 HorizontalScrollView.LayoutParams.WRAP_CONTENT
         ));
 
+        addNavItem(row, "Ana", R.drawable.ic_home, () -> showHome());
         addNavItem(row, "Link", R.drawable.ic_link, () -> showDownloader());
         addNavItem(row, "Akış", R.drawable.ic_link, () -> openPlatform(activePlatform));
         addNavItem(row, "İndirilenler", R.drawable.ic_downloads, () -> showDownloads());
@@ -1477,6 +1624,13 @@ public final class MainActivity extends Activity {
             enterFullscreen();
             toast("Tam ekran yenilendi");
         });
+        if (isSignedIn()) {
+            addActionSetting(panel, "Çıkış yap", "Bu cihazdaki oturumu ve lisans bilgisini temizle", () -> confirm(
+                    "Çıkış yap",
+                    "Bu cihazdaki oturum kapatılsın mı?",
+                    this::signOut
+            ));
+        }
     }
 
     private void renderVideoAudioSettings(LinearLayout panel) {
@@ -1576,14 +1730,6 @@ public final class MainActivity extends Activity {
             addActionSetting(panel, "Kayıt / giriş ekranı", "E-posta ve şifre ile oturum aç", () -> showAuthPanel(false));
         } else {
             addActionSetting(panel, "Onay isteğini yenile", "Kullanım isteği oluştur ve yönetici onayı bekle", () -> registerLicenseEmail(currentAuthEmail(), panel));
-            addActionSetting(panel, "Çıkış yap", "Bu cihazdaki oturumu ve lisans bilgisini temizle", () -> confirm(
-                    "Çıkış yap",
-                    "Bu cihazdaki oturum kapatılsın mı?",
-                    () -> {
-                        signOut();
-                        renderLicenseSettings(panel);
-                    }
-            ));
         }
         addActionSetting(panel, "Lisans anahtarı gir", licenseKeyLabel(), () -> showLicenseDialog(panel));
         addActionSetting(panel, "Onay durumunu kontrol et", "Sunucudan lisans/onay durumunu denetle", () -> validateLicense(false, panel));
@@ -1949,12 +2095,12 @@ public final class MainActivity extends Activity {
         if (isEnglish()) {
             return "MetaFold Downloader is a social video download helper built for the MetaFold ecosystem.\n\n" +
                     "Developer: Ahmet Doğan\n" +
-                    "Version: 3.9\n\n" +
+                    "Version: " + currentAppVersion() + "\n\n" +
                     "The app is designed only for content you own or are authorized to download.";
         }
         return "MetaFold Downloader, MetaFold ekosistemi için geliştirilen sosyal video indirme yardımcısıdır.\n\n" +
                 "Geliştirici: Ahmet Doğan\n" +
-                "Sürüm: 3.9\n\n" +
+                "Sürüm: " + currentAppVersion() + "\n\n" +
                 "Uygulama yalnızca size ait veya indirme yetkiniz olan içerikler için tasarlanmıştır.";
     }
 
@@ -1965,7 +2111,7 @@ public final class MainActivity extends Activity {
         settings.setDatabaseEnabled(true);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
-        settings.setUserAgentString(settings.getUserAgentString() + " MetaFoldDownloader/3.9");
+        settings.setUserAgentString(settings.getUserAgentString() + " MetaFoldDownloader/" + currentAppVersion());
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
         CookieManager cookieManager = CookieManager.getInstance();
@@ -2048,6 +2194,23 @@ public final class MainActivity extends Activity {
         openPlatform(platform);
     }
 
+    private void showHome() {
+        if (!ensureNoMandatoryUpdate()) {
+            return;
+        }
+        if (!isSignedIn()) {
+            showAuthPanel(false);
+            return;
+        }
+        hidePanels();
+        if (appHeaderView != null) {
+            appHeaderView.setVisibility(View.VISIBLE);
+        }
+        if (homePanel != null) {
+            homePanel.setVisibility(View.VISIBLE);
+        }
+    }
+
     private void showDownloader() {
         if (!ensureNoMandatoryUpdate()) {
             return;
@@ -2118,6 +2281,9 @@ public final class MainActivity extends Activity {
     private void hidePanels() {
         if (authPanel != null) {
             authPanel.setVisibility(View.GONE);
+        }
+        if (homePanel != null) {
+            homePanel.setVisibility(View.GONE);
         }
         if (downloadPanel != null) {
             downloadPanel.setVisibility(View.GONE);
@@ -2816,7 +2982,7 @@ public final class MainActivity extends Activity {
                 .setMessage(ui("Kurulu sürüm") + ": " + updateInfo.currentVersion + "\n" +
                         ui("Yeni sürüm") + ": " + updateInfo.latestLabel() + "\n\n" +
                         ui("Güncelleme GitHub Releases üzerinden alınacak."))
-                .setPositiveButton(ui("Şimdi yükle"), (dialog, which) -> openUpdateTarget(updateInfo))
+                .setPositiveButton(ui("�?imdi yükle"), (dialog, which) -> openUpdateTarget(updateInfo))
                 .setNegativeButton(ui("Daha sonra hatırlat"), (dialog, which) -> snoozeAppUpdate(updateInfo));
         if (!TextUtils.isEmpty(updateInfo.apkUrl)) {
             builder.setNeutralButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl));
@@ -2972,7 +3138,7 @@ public final class MainActivity extends Activity {
                     if (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE) {
                         renderLicenseSettings(settingsPanel);
                     }
-                    showDownloader();
+                    showHome();
                     AlertDialog.Builder builder = new AlertDialog.Builder(this)
                             .setTitle(ui(result.active ? "Lisans etkin" : "Onay bekleniyor"))
                             .setMessage(ui(result.active
@@ -6030,6 +6196,9 @@ public final class MainActivity extends Activity {
             case "paneli": return "panel";
             case "Akışı aç": return "Open feed";
             case "Menü": return "Menu";
+            case "Ana": return "Home";
+            case "Ana ekran": return "Home";
+            case "Tanıtım ve hızlı kısayollar": return "Overview and quick shortcuts";
             case "Link ile indir": return "Download by link";
             case "Paylaşılan bağlantıdan seçenekleri getir": return "Get options from a shared link";
             case "Aktif platform akışı": return "Active platform feed";
@@ -6047,6 +6216,10 @@ public final class MainActivity extends Activity {
             case "Destek sayfasını aç": return "Open support page";
             case "IBAN bilgisi henüz eklenmedi. Destek hesabını bağlamak için geliştirici IBAN bilgisini eklemeli.": return "IBAN information has not been added yet. Add the developer IBAN to enable bank transfer support.";
             case "Temalar": return "Themes";
+            case "Video bağlantılarını kalite seçerek indirin, platform akışlarına uygulama içinden geçin ve lisans/güncellemeleri tek yerden yönetin.": return "Download video links with quality choices, browse platform feeds inside the app, and manage licenses and updates in one place.";
+            case "Platform kısayolları": return "Platform shortcuts";
+            case "Hızlı başlangıç": return "Quick start";
+            case "Bir platform akışını açabilir, başka uygulamadan paylaşılan linki yakalayabilir veya linki buraya yapıştırıp MP3/720p/1080p gibi seçeneklerle indirebilirsiniz.": return "Open a platform feed, catch links shared from another app, or paste a link here and download with options such as MP3, 720p, or 1080p.";
             case "Tema seç": return "Choose theme";
             case "Tema değiştirildi": return "Theme changed";
             case "Geri": return "Back";
@@ -6139,7 +6312,7 @@ public final class MainActivity extends Activity {
             case "Release sayfasını aç": return "Open release page";
             case "APK'yı aç": return "Open APK";
             case "Güncelleme bulundu": return "Update found";
-            case "Şimdi yükle": return "Install now";
+            case "�?imdi yükle": return "Install now";
             case "Daha sonra hatırlat": return "Remind me later";
             case "Daha sonra hatırlatılacak": return "You will be reminded later";
             case "Tamam": return "OK";
@@ -6150,31 +6323,31 @@ public final class MainActivity extends Activity {
             case "Hesabınızı oluşturun": return "Create your account";
             case "MetaFold Downloader kullanmak için e-posta hesabınızla devam edin.": return "Continue with your email account to use MetaFold Downloader.";
             case "E-posta": return "Email";
-            case "Şifre": return "Password";
-            case "Şifre tekrar": return "Repeat password";
+            case "�?ifre": return "Password";
+            case "�?ifre tekrar": return "Repeat password";
             case "Hesabınız yok mu? Kayıt ol": return "No account? Register";
             case "Zaten hesabınız var mı? Giriş yap": return "Already have an account? Sign in";
-            case "Şifremi unuttum": return "Forgot password";
+            case "�?ifremi unuttum": return "Forgot password";
             case "Kayıt isteği oluştuktan sonra kullanım için yönetici onayı gerekir.": return "After registration, admin approval is required before use.";
-            case "Şifre en az 6 karakter olmalı": return "Password must be at least 6 characters";
-            case "Şifreler eşleşmiyor": return "Passwords do not match";
+            case "�?ifre en az 6 karakter olmalı": return "Password must be at least 6 characters";
+            case "�?ifreler eşleşmiyor": return "Passwords do not match";
             case "Kayıt oluşturuluyor...": return "Creating account...";
             case "Giriş yapılıyor...": return "Signing in...";
             case "Hesabınız onaylı. Uygulamayı kullanabilirsiniz.": return "Your account is approved. You can use the app.";
             case "Kayıt isteğiniz alındı. Yönetici onayından sonra indirme özellikleri açılır.": return "Your registration request was received. Download features unlock after admin approval.";
             case "Kayıt başarısız": return "Registration failed";
             case "Giriş başarısız": return "Sign in failed";
-            case "Şifre sıfırlama e-postası gönderiliyor...": return "Sending password reset email...";
-            case "Şifre sıfırlama": return "Password reset";
-            case "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.": return "A password reset link was sent to your email address.";
-            case "Şifre sıfırlama başarısız": return "Password reset failed";
+            case "�?ifre sıfırlama e-postası gönderiliyor...": return "Sending password reset email...";
+            case "�?ifre sıfırlama": return "Password reset";
+            case "�?ifre sıfırlama bağlantısı e-posta adresinize gönderildi.": return "A password reset link was sent to your email address.";
+            case "�?ifre sıfırlama başarısız": return "Password reset failed";
             case "Giriş gerekli": return "Sign in required";
             case "Devam etmek için kayıt olun veya giriş yapın.": return "Register or sign in to continue.";
             case "Çıkış yapıldı": return "Signed out";
             case "Bu e-posta zaten kayıtlı. Giriş yapın.": return "This email is already registered. Sign in.";
             case "Bu e-posta ile hesap bulunamadı.": return "No account was found for this email.";
             case "E-posta veya şifre hatalı.": return "Email or password is incorrect.";
-            case "Şifre en az 6 karakter olmalı.": return "Password must be at least 6 characters.";
+            case "�?ifre en az 6 karakter olmalı.": return "Password must be at least 6 characters.";
             case "Bu kullanıcı hesabı devre dışı.": return "This user account is disabled.";
             case "Çok fazla deneme yapıldı. Biraz sonra tekrar deneyin.": return "Too many attempts. Try again later.";
             case "Firebase Authentication içinde Email/Password girişi etkinleştirilmeli.": return "Email/Password sign-in must be enabled in Firebase Authentication.";
@@ -6388,7 +6561,8 @@ public final class MainActivity extends Activity {
         return iconRes == R.drawable.ic_downloads
                 || iconRes == R.drawable.ic_settings
                 || iconRes == R.drawable.ic_about
-                || iconRes == R.drawable.ic_link;
+                || iconRes == R.drawable.ic_link
+                || iconRes == R.drawable.ic_home;
     }
 
     private static int lighten(int color) {
