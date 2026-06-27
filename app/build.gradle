@@ -10,8 +10,8 @@ android {
         applicationId "com.metafold.videodownloader"
         minSdk 24
         targetSdk 35
-        versionCode 38
-        versionName "3.17"
+        versionCode 39
+        versionName "3.18"
 
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a"

@@ -3804,6 +3804,70 @@ public final class MainActivity extends Activity {
         return false;
     }
 
+    private void requireFreshLicenseForUse(Runnable approvedAction) {
+        if (!LICENSE_REQUIRED) {
+            approvedAction.run();
+            return;
+        }
+        if (!ensureNoMandatoryUpdate()) {
+            return;
+        }
+        if (!isSignedIn()) {
+            showAuthRequiredDialog();
+            return;
+        }
+        if (!isLicenseActive()) {
+            showLicenseRequiredDialog();
+            return;
+        }
+        if (!isFirestoreLicenseConfigured()) {
+            showFirestoreSetupDialog();
+            return;
+        }
+        String email = getString(PREF_LICENSE_EMAIL, "").trim();
+        if (TextUtils.isEmpty(email)) {
+            email = currentAuthEmail();
+        }
+        if (TextUtils.isEmpty(email)) {
+            showLicenseRequiredDialog();
+            return;
+        }
+        final String checkedEmail = email;
+        setBusy(true, "Lisans doğrulanıyor...");
+        licenseExecutor.execute(() -> {
+            try {
+                LicenseResult result = requestLicenseValidation("", checkedEmail);
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    applyLicenseResult(result);
+                    if (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE) {
+                        renderLicenseSettings(settingsPanel);
+                    }
+                    if (result.active && !isLicenseExpired(result.expiresAt)) {
+                        approvedAction.run();
+                    } else {
+                        setStatus(result.message, false);
+                        toast(result.message);
+                        showLicenseRequiredDialog();
+                    }
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    String message = cleanError(error);
+                    outputView.setText(message);
+                    setStatus("Lisans doğrulanamadı", false);
+                    new AlertDialog.Builder(this)
+                            .setTitle(ui("Lisans doğrulanamadı"))
+                            .setMessage(ui(message))
+                            .setPositiveButton(ui("Onay durumunu kontrol et"), (dialog, which) -> openLicenseSettings())
+                            .setNegativeButton(ui("Tamam"), null)
+                            .show();
+                });
+            }
+        });
+    }
+
     private boolean isLicenseActive() {
         return !LICENSE_REQUIRED || (LICENSE_STATUS_ACTIVE.equals(getString(PREF_LICENSE_STATUS, "")) && !isLicenseExpired(getString(PREF_LICENSE_EXPIRES_AT, "")));
     }
@@ -3891,9 +3955,10 @@ public final class MainActivity extends Activity {
     }
 
     private void fetchFormatOptions(boolean fromBrowser) {
-        if (!ensureUsageApproved()) {
-            return;
-        }
+        requireFreshLicenseForUse(() -> fetchFormatOptionsAfterLicense(fromBrowser));
+    }
+
+    private void fetchFormatOptionsAfterLicense(boolean fromBrowser) {
         String normalizedUrl = normalizeUrl(urlInput.getText().toString().trim());
         String platform = detectPlatform(normalizedUrl);
         if (TextUtils.isEmpty(normalizedUrl)) {
@@ -4088,9 +4153,10 @@ public final class MainActivity extends Activity {
     }
 
     private void startDownload() {
-        if (!ensureUsageApproved()) {
-            return;
-        }
+        requireFreshLicenseForUse(this::startDownloadAfterLicense);
+    }
+
+    private void startDownloadAfterLicense() {
         String normalizedUrl = normalizeUrl(urlInput.getText().toString().trim());
         String platform = detectPlatform(normalizedUrl);
 
@@ -4301,16 +4367,21 @@ public final class MainActivity extends Activity {
         if (downloading || downloadQueue.isEmpty()) {
             return;
         }
-        QueuedDownload next = downloadQueue.removeFirst();
-        currentInfoUrl = next.url;
-        selectedOption = next.option;
-        urlInput.setText(displayUrlForUi(next.url));
-        urlInput.setSelection(urlInput.length());
-        if (playlistSwitch != null) {
-            playlistSwitch.setChecked(next.playlistMode);
-        }
-        currentInfoPlaylistMode = next.playlistMode;
-        startDownloadNow(next.url, next.platform, next.option, next.playlistMode, true);
+        requireFreshLicenseForUse(() -> {
+            QueuedDownload next = downloadQueue.pollFirst();
+            if (next == null) {
+                return;
+            }
+            currentInfoUrl = next.url;
+            selectedOption = next.option;
+            urlInput.setText(displayUrlForUi(next.url));
+            urlInput.setSelection(urlInput.length());
+            if (playlistSwitch != null) {
+                playlistSwitch.setChecked(next.playlistMode);
+            }
+            currentInfoPlaylistMode = next.playlistMode;
+            startDownloadNow(next.url, next.platform, next.option, next.playlistMode, true);
+        });
     }
 
     private YoutubeDLRequest buildDownloadRequest(String url, File jobDir, DownloadOption option, File cookiesFile, boolean playlistMode) {
