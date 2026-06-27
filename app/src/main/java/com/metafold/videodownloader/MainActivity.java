@@ -158,6 +158,8 @@ public final class MainActivity extends Activity {
     private static final String PREF_DEDICATED_FEED = "dedicated_feed";
     private static final String PREF_UPDATE_NOTIFICATIONS = "update_notifications";
     private static final String PREF_APP_UPDATE_LAST_CHECK = "app_update_last_check";
+    private static final String PREF_APP_UPDATE_REMIND_VERSION = "app_update_remind_version";
+    private static final String PREF_APP_UPDATE_REMIND_AFTER = "app_update_remind_after";
     private static final String PREF_MANDATORY_UPDATE_VERSION = "mandatory_update_version";
     private static final String PREF_MANDATORY_UPDATE_HTML_URL = "mandatory_update_html_url";
     private static final String PREF_MANDATORY_UPDATE_APK_URL = "mandatory_update_apk_url";
@@ -191,6 +193,7 @@ public final class MainActivity extends Activity {
     private static final String LICENSE_WHATSAPP_NUMBER = "905357309054";
     private static final String GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/metafold-dev/metafold-downloader-android/releases/latest";
     private static final String GITHUB_RELEASES_URL = "https://github.com/metafold-dev/metafold-downloader-android/releases/latest";
+    private static final long UPDATE_REMIND_LATER_MS = 6L * 60L * 60L * 1000L;
     private static final boolean LICENSE_REQUIRED = true;
     private static final String FIREBASE_PROJECT_ID = "metafold-downloader";
     private static final String FIREBASE_WEB_API_KEY = "AIzaSyDp9eEdjo-pPS76MVTR8O-cmlWtYycXSy0";
@@ -2688,6 +2691,7 @@ public final class MainActivity extends Activity {
         String tagName = json.optString("tag_name", "");
         String latestVersion = normalizeVersionTag(tagName);
         String releaseName = json.optString("name", tagName);
+        String releaseBody = json.optString("body", "");
         String htmlUrl = json.optString("html_url", GITHUB_RELEASES_URL);
         String apkUrl = "";
         JSONArray assets = json.optJSONArray("assets");
@@ -2712,13 +2716,21 @@ public final class MainActivity extends Activity {
 
         String currentVersion = currentAppVersion();
         boolean newer = compareVersions(latestVersion, currentVersion) > 0;
-        return new AppUpdateInfo(releaseName, tagName, latestVersion, currentVersion, htmlUrl, apkUrl, newer);
+        boolean mandatory = isMandatoryRelease(releaseName, releaseBody);
+        return new AppUpdateInfo(releaseName, tagName, latestVersion, currentVersion, htmlUrl, apkUrl, newer, mandatory);
     }
 
     private void handleAppUpdateInfo(AppUpdateInfo updateInfo, boolean silent) {
         if (updateInfo.newer) {
-            storeMandatoryUpdate(updateInfo);
-            showMandatoryUpdateDialog(updateInfo);
+            if (updateInfo.mandatory) {
+                storeMandatoryUpdate(updateInfo);
+                showMandatoryUpdateDialog(updateInfo);
+                return;
+            }
+            clearMandatoryUpdateLock();
+            if (!silent || !isUpdateReminderSnoozed(updateInfo)) {
+                showAppUpdateFoundDialog(updateInfo);
+            }
             return;
         }
         clearMandatoryUpdateLock();
@@ -2751,7 +2763,7 @@ public final class MainActivity extends Activity {
         String releaseName = getString(PREF_MANDATORY_UPDATE_RELEASE_NAME, "MetaFold Downloader " + latestVersion);
         String htmlUrl = getString(PREF_MANDATORY_UPDATE_HTML_URL, GITHUB_RELEASES_URL);
         String apkUrl = getString(PREF_MANDATORY_UPDATE_APK_URL, "");
-        return new AppUpdateInfo(releaseName, latestVersion, latestVersion, currentAppVersion(), htmlUrl, apkUrl, true);
+        return new AppUpdateInfo(releaseName, latestVersion, latestVersion, currentAppVersion(), htmlUrl, apkUrl, true, true);
     }
 
     private void storeMandatoryUpdate(AppUpdateInfo updateInfo) {
@@ -2796,6 +2808,48 @@ public final class MainActivity extends Activity {
             builder.setNeutralButton(ui("APK'yı aç"), (dialog, which) -> openWebsite(updateInfo.apkUrl));
         }
         builder.show();
+    }
+
+    private void showAppUpdateFoundDialog(AppUpdateInfo updateInfo) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(ui("Güncelleme bulundu"))
+                .setMessage(ui("Kurulu sürüm") + ": " + updateInfo.currentVersion + "\n" +
+                        ui("Yeni sürüm") + ": " + updateInfo.latestLabel() + "\n\n" +
+                        ui("Güncelleme GitHub Releases üzerinden alınacak."))
+                .setPositiveButton(ui("Şimdi yükle"), (dialog, which) -> openUpdateTarget(updateInfo))
+                .setNegativeButton(ui("Daha sonra hatırlat"), (dialog, which) -> snoozeAppUpdate(updateInfo));
+        if (!TextUtils.isEmpty(updateInfo.apkUrl)) {
+            builder.setNeutralButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl));
+        }
+        builder.show();
+    }
+
+    private static boolean isMandatoryRelease(String releaseName, String releaseBody) {
+        String text = (releaseName + "\n" + releaseBody).toLowerCase(Locale.US);
+        return text.contains("[mandatory]")
+                || text.contains("[force-update]")
+                || text.contains("mandatory update")
+                || text.contains("zorunlu güncelleme");
+    }
+
+    private void openUpdateTarget(AppUpdateInfo updateInfo) {
+        openWebsite(TextUtils.isEmpty(updateInfo.apkUrl) ? updateInfo.htmlUrl : updateInfo.apkUrl);
+    }
+
+    private void snoozeAppUpdate(AppUpdateInfo updateInfo) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(PREF_APP_UPDATE_REMIND_VERSION, updateInfo.latestVersion)
+                .putLong(PREF_APP_UPDATE_REMIND_AFTER, System.currentTimeMillis() + UPDATE_REMIND_LATER_MS)
+                .apply();
+        toast("Daha sonra hatırlatılacak");
+    }
+
+    private boolean isUpdateReminderSnoozed(AppUpdateInfo updateInfo) {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String version = prefs.getString(PREF_APP_UPDATE_REMIND_VERSION, "");
+        long remindAfter = prefs.getLong(PREF_APP_UPDATE_REMIND_AFTER, 0L);
+        return updateInfo.latestVersion.equals(version) && remindAfter > System.currentTimeMillis();
     }
 
     private void showMandatoryUpdateDialog(AppUpdateInfo updateInfo) {
@@ -6084,6 +6138,10 @@ public final class MainActivity extends Activity {
             case "Uygulamayı kapat": return "Close app";
             case "Release sayfasını aç": return "Open release page";
             case "APK'yı aç": return "Open APK";
+            case "Güncelleme bulundu": return "Update found";
+            case "Şimdi yükle": return "Install now";
+            case "Daha sonra hatırlat": return "Remind me later";
+            case "Daha sonra hatırlatılacak": return "You will be reminded later";
             case "Tamam": return "OK";
             case "Kayıt ol": return "Register";
             case "Giriş yap": return "Sign in";
@@ -6748,8 +6806,9 @@ public final class MainActivity extends Activity {
         final String htmlUrl;
         final String apkUrl;
         final boolean newer;
+        final boolean mandatory;
 
-        AppUpdateInfo(String releaseName, String tagName, String latestVersion, String currentVersion, String htmlUrl, String apkUrl, boolean newer) {
+        AppUpdateInfo(String releaseName, String tagName, String latestVersion, String currentVersion, String htmlUrl, String apkUrl, boolean newer, boolean mandatory) {
             this.releaseName = releaseName;
             this.tagName = tagName;
             this.latestVersion = latestVersion;
@@ -6757,6 +6816,7 @@ public final class MainActivity extends Activity {
             this.htmlUrl = htmlUrl;
             this.apkUrl = apkUrl;
             this.newer = newer;
+            this.mandatory = mandatory;
         }
 
         String latestLabel() {
