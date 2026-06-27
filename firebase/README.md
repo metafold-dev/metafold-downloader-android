@@ -12,7 +12,18 @@ metafold-downloader
 
 ## Kurulum
 
-Firebase Console'da Firestore zaten acildi. Bu klasordeki kurallar sadece uygulamanin `pending` kayit olusturmasina ve kendi kaydini okumasina izin verir. Kullanici uygulamadan `active` yapamaz.
+Firebase Console'da Firestore zaten acildi. Ayrica Firebase Authentication urununu baslatin ve Email/Password girisini acin:
+
+```text
+Firebase Console > Authentication > Get started
+Firebase Console > Authentication > Sign-in method > Email/Password > Enable
+```
+
+Uygulamada `CONFIGURATION_NOT_FOUND` gorulurse bu adim tamamlanmamistir veya Android tarafindaki `FIREBASE_WEB_API_KEY` farkli Firebase projesine aittir.
+
+Bu klasordeki kurallar sadece oturum acmis kullanicinin `pending` kayit olusturmasina ve kendi e-posta kaydini okumasina izin verir. Kullanici uygulamadan `active` yapamaz.
+
+Lisans dokumani e-posta bazlidir: bir e-posta hesabi ayni anda sadece tek cihaza baglanir. Aktif lisans baska cihazda acilirsa uygulama, `nextDeviceChangeAt` zamani dolmadan cihaz degisimine izin vermez. Sure dolduysa cihaz otomatik yeni cihaza aktarilir ve yeni 7 gunluk kilit baslar.
 
 Kurallari deploy etmek icin Firebase CLI varsa:
 
@@ -46,12 +57,32 @@ private static final String FIREBASE_WEB_API_KEY = "BURAYA_WEB_API_KEY";
 
 ## Lisans verme akisi
 
-1. Kullanici uygulamada e-posta ile kayit olur.
-2. Firestore'da `license_requests` koleksiyonunda yeni dokuman olusur.
+1. Kullanici uygulamada e-posta ve sifre ile kayit olur.
+2. Firestore'da `license_requests` koleksiyonunda e-posta bazli yeni dokuman olusur.
 3. Dokumani Firebase Console'dan acin.
 4. `status` alanini `pending` yerine `active` yapin.
 5. Isterseniz `owner`, `expiresAt`, `licenseKey` alanlarini da doldurun.
 6. Kullanici uygulamada `Onay durumunu kontrol et` dediginde uygulama acilir.
+
+## Sureli lisans
+
+`expiresAt` alani lisansin bitis tarihidir. Bos birakilirsa lisans suresiz kabul edilir. Tarihi string olarak `yyyy-MM-dd` biciminde girin; uygulama o gunun sonunda lisansi bitmis sayar.
+
+2026-06-27 tarihinden baslayan ornekler:
+
+```text
+1 ay:  2026-07-27
+3 ay:  2026-09-27
+6 ay:  2026-12-27
+1 yil: 2027-06-27
+```
+
+Kullaniciyi onaylamak icin Firestore dokumaninda en az su alanlari duzenlemeniz yeterlidir:
+
+```text
+status: active
+expiresAt: 2027-06-27
+```
 
 ## Beklenen dokuman alanlari
 
@@ -62,13 +93,15 @@ email: kullanici@example.com
 deviceId: android-device-id
 deviceLabel: Samsung SM-...
 packageName: com.metafold.videodownloader
-appVersion: 3.9
+appVersion: 3.16
 status: pending | active | inactive
 requestId: REQ-...
 owner: Ahmet Dogan
 expiresAt: 2027-12-31
 licenseKey: MFD-...
 createdAt: timestamp-ms
+lastDeviceChangeAt: timestamp
+nextDeviceChangeAt: timestamp
 ```
 
 Spark planda Firestore ucretsiz kota 50 kisi icin fazlasiyla yeterlidir; video indirme Firebase uzerinden yapilmaz.

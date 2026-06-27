@@ -81,6 +81,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -95,6 +96,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -155,6 +157,10 @@ public final class MainActivity extends Activity {
     private static final String PREF_DEDICATED_FEED = "dedicated_feed";
     private static final String PREF_UPDATE_NOTIFICATIONS = "update_notifications";
     private static final String PREF_APP_UPDATE_LAST_CHECK = "app_update_last_check";
+    private static final String PREF_MANDATORY_UPDATE_VERSION = "mandatory_update_version";
+    private static final String PREF_MANDATORY_UPDATE_HTML_URL = "mandatory_update_html_url";
+    private static final String PREF_MANDATORY_UPDATE_APK_URL = "mandatory_update_apk_url";
+    private static final String PREF_MANDATORY_UPDATE_RELEASE_NAME = "mandatory_update_release_name";
     private static final String PREF_LICENSE_KEY = "license_key";
     private static final String PREF_LICENSE_EMAIL = "license_email";
     private static final String PREF_LICENSE_REQUEST_ID = "license_request_id";
@@ -162,6 +168,13 @@ public final class MainActivity extends Activity {
     private static final String PREF_LICENSE_OWNER = "license_owner";
     private static final String PREF_LICENSE_EXPIRES_AT = "license_expires_at";
     private static final String PREF_LICENSE_LAST_CHECK = "license_last_check";
+    private static final String PREF_LICENSE_BOUND_DEVICE_ID = "license_bound_device_id";
+    private static final String PREF_LICENSE_BOUND_DEVICE_LABEL = "license_bound_device_label";
+    private static final String PREF_LICENSE_NEXT_DEVICE_CHANGE = "license_next_device_change";
+    private static final String PREF_AUTH_EMAIL = "auth_email";
+    private static final String PREF_AUTH_ID_TOKEN = "auth_id_token";
+    private static final String PREF_AUTH_REFRESH_TOKEN = "auth_refresh_token";
+    private static final String PREF_AUTH_LOCAL_ID = "auth_local_id";
     private static final String PREF_PLAYER_NOTIFICATION = "player_notification";
     private static final String PREF_NEW_FEED_NOTIFICATIONS = "new_feed_notifications";
     private static final String PREF_NOTIFICATION_CHECK_FREQUENCY = "notification_check_frequency";
@@ -179,10 +192,14 @@ public final class MainActivity extends Activity {
     private static final boolean LICENSE_REQUIRED = true;
     private static final String FIREBASE_PROJECT_ID = "metafold-downloader";
     private static final String FIREBASE_WEB_API_KEY = "AIzaSyDp9eEdjo-pPS76MVTR8O-cmlWtYycXSy0";
+    private static final String FIREBASE_AUTH_BASE_URL = "https://identitytoolkit.googleapis.com/v1/";
     private static final String FIRESTORE_LICENSE_COLLECTION = "license_requests";
     private static final String LICENSE_STATUS_ACTIVE = "active";
     private static final String LICENSE_STATUS_PENDING = "pending";
     private static final String LICENSE_STATUS_INACTIVE = "inactive";
+    private static final String LICENSE_STATUS_DEVICE_LOCKED = "device_locked";
+    private static final long DEVICE_CHANGE_COOLDOWN_MS = 7L * 24L * 60L * 60L * 1000L;
+    private static final long LICENSE_REFRESH_INTERVAL_MS = 15L * 60L * 1000L;
     private static final long BACK_EXIT_WINDOW_MS = 1800L;
     private static final long UPDATE_INTERVAL_MS = 12L * 60L * 60L * 1000L;
     private static final Pattern URL_PATTERN = Pattern.compile(
@@ -208,6 +225,7 @@ public final class MainActivity extends Activity {
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService licenseExecutor = Executors.newSingleThreadExecutor();
     private final Object initLock = new Object();
     private final List<Button> optionButtons = new ArrayList<>();
     private final Deque<QueuedDownload> downloadQueue = new ArrayDeque<>();
@@ -218,6 +236,7 @@ public final class MainActivity extends Activity {
     private final Map<Integer, File> playlistDownloadedFiles = new LinkedHashMap<>();
 
     private LinearLayout downloadPanel;
+    private LinearLayout authPanel;
     private LinearLayout browserPanel;
     private LinearLayout downloadsPanel;
     private LinearLayout settingsPanel;
@@ -232,6 +251,7 @@ public final class MainActivity extends Activity {
     private LinearLayout playlistStatusList;
     private LinearLayout optionList;
     private LinearLayout lastDownloadSummary;
+    private View appHeaderView;
     private EditText urlInput;
     private EditText downloadSearchInput;
     private Button analyzeButton;
@@ -257,6 +277,7 @@ public final class MainActivity extends Activity {
     private TextView activePlatformNameView;
     private TextView activePlatformUrlView;
     private WebView webView;
+    private AlertDialog mandatoryUpdateDialog;
 
     private boolean downloaderReady;
     private boolean ffmpegReady;
@@ -267,6 +288,8 @@ public final class MainActivity extends Activity {
     private boolean downloadSelectionMode;
     private boolean currentInfoPlaylistMode;
     private boolean activePlaylistDownload;
+    private boolean licenseRefreshInProgress;
+    private boolean mandatoryUpdateRequired;
     private volatile boolean cancelRequested;
     private volatile boolean skipCurrentRequested;
     private int activePlaylistIndex;
@@ -317,9 +340,16 @@ public final class MainActivity extends Activity {
         enterFullscreen();
         selectedLanguage = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_LANGUAGE, "tr");
         setContentView(createContentView());
+        restoreMandatoryUpdateLock();
         applyRefreshRatePreference();
         setupWebView();
         pendingAutoFetch = handleIncomingIntent(getIntent());
+        if (!isSignedIn()) {
+            pendingAutoFetch = false;
+            showAuthPanel(false);
+        } else {
+            refreshLicenseSilently(false);
+        }
         setBusy(true, "İndirme altyapısı kontrol ediliyor...");
         executor.execute(() -> {
             try {
@@ -349,7 +379,16 @@ public final class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (mandatoryUpdateRequired) {
+            showMandatoryUpdateDialog(storedMandatoryUpdateInfo());
+            return;
+        }
         boolean shouldFetch = handleIncomingIntent(intent);
+        if (shouldFetch && !isSignedIn()) {
+            pendingAutoFetch = false;
+            showAuthPanel(true);
+            return;
+        }
         if (shouldFetch && downloaderReady && !busy && !downloading) {
             fetchFormatOptions(false);
         } else if (shouldFetch) {
@@ -394,6 +433,10 @@ public final class MainActivity extends Activity {
             closeDrawer();
             return;
         }
+        if (mandatoryUpdateRequired) {
+            showMandatoryUpdateDialog(storedMandatoryUpdateInfo());
+            return;
+        }
         if (browserPanel != null && browserPanel.getVisibility() == View.VISIBLE && webView != null && webView.canGoBack()) {
             webView.goBack();
             return;
@@ -426,6 +469,7 @@ public final class MainActivity extends Activity {
             // Process may already be stopped.
         }
         executor.shutdownNow();
+        licenseExecutor.shutdownNow();
         super.onDestroy();
     }
 
@@ -578,7 +622,13 @@ public final class MainActivity extends Activity {
                 ScrollView.LayoutParams.WRAP_CONTENT
         ));
 
-        root.addView(createAppHeader(), matchWrap());
+        appHeaderView = createAppHeader();
+        root.addView(appHeaderView, matchWrap());
+
+        authPanel = createAuthPanel();
+        LinearLayout.LayoutParams authParams = matchWrap();
+        authParams.topMargin = dp(12);
+        root.addView(authPanel, authParams);
 
         downloadPanel = new LinearLayout(this);
         downloadPanel.setOrientation(LinearLayout.VERTICAL);
@@ -765,14 +815,163 @@ public final class MainActivity extends Activity {
         footer.setPadding(0, dp(14), 0, 0);
         root.addView(footer);
 
+        if (isSignedIn()) {
+            authPanel.setVisibility(View.GONE);
+            if (appHeaderView != null) {
+                appHeaderView.setVisibility(View.VISIBLE);
+            }
+        } else {
+            downloadPanel.setVisibility(View.GONE);
+            if (appHeaderView != null) {
+                appHeaderView.setVisibility(View.GONE);
+            }
+        }
+
         drawerOverlay = createDrawerOverlay();
         drawerOverlay.setVisibility(View.GONE);
         appFrame.addView(drawerOverlay, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
+        forceDrawerClosed();
 
         return appFrame;
+    }
+
+    private LinearLayout createAuthPanel() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER);
+        panel.setPadding(0, dp(8), 0, dp(8));
+        panel.setMinimumHeight(Math.max(dp(560), getResources().getDisplayMetrics().heightPixels - topSafeInsetFallback() - dp(150)));
+        renderAuthPanel(panel, false);
+        return panel;
+    }
+
+    private void renderAuthPanel(LinearLayout panel, boolean loginMode) {
+        AppThemeOption theme = currentTheme();
+        panel.removeAllViews();
+        animateSettingsPanel(panel, loginMode);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+        LinearLayout.LayoutParams cardParams = matchWrap();
+        cardParams.gravity = Gravity.CENTER;
+        panel.addView(card, cardParams);
+
+        LinearLayout banner = new LinearLayout(this);
+        banner.setOrientation(LinearLayout.HORIZONTAL);
+        banner.setGravity(Gravity.CENTER_VERTICAL);
+        banner.setPadding(dp(12), dp(12), dp(12), dp(12));
+        banner.setBackground(rounded(softAccent(theme.accentColor), 8, theme.accentColor));
+        card.addView(banner, matchWrap());
+
+        ImageView bannerLogo = new ImageView(this);
+        bannerLogo.setImageResource(R.drawable.app_icon);
+        banner.addView(bannerLogo, new LinearLayout.LayoutParams(dp(58), dp(58)));
+
+        LinearLayout bannerTexts = new LinearLayout(this);
+        bannerTexts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams bannerTextParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        bannerTextParams.leftMargin = dp(12);
+        banner.addView(bannerTexts, bannerTextParams);
+
+        TextView brand = textView("MetaFold Downloader", 20, theme.textColor, true);
+        brand.setSingleLine(true);
+        brand.setEllipsize(TextUtils.TruncateAt.END);
+        bannerTexts.addView(brand);
+
+        TextView brandSubtitle = textView("Güvenli indirme hesabınız", 12, theme.mutedColor, false);
+        brandSubtitle.setSingleLine(true);
+        brandSubtitle.setEllipsize(TextUtils.TruncateAt.END);
+        bannerTexts.addView(brandSubtitle);
+
+        TextView title = textView(loginMode ? "Hesabınıza giriş yapın" : "Hesabınızı oluşturun", 22, theme.textColor, true);
+        title.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams titleParams = matchWrap();
+        titleParams.topMargin = dp(18);
+        card.addView(title, titleParams);
+
+        TextView subtitle = textView(
+                "MetaFold Downloader kullanmak i\u00e7in e-posta hesab\u0131n\u0131zla devam edin.",
+                13,
+                theme.mutedColor,
+                false
+        );
+        subtitle.setGravity(Gravity.CENTER);
+        subtitle.setPadding(dp(4), dp(4), dp(4), 0);
+        card.addView(subtitle);
+
+        EditText emailInput = authInput("E-posta", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        emailInput.setText(firstNonEmpty(getString(PREF_AUTH_EMAIL, ""), getString(PREF_LICENSE_EMAIL, "")));
+        LinearLayout.LayoutParams emailParams = matchWrap();
+        emailParams.topMargin = dp(18);
+        card.addView(emailInput, emailParams);
+
+        EditText passwordInput = authInput("\u015eifre", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        LinearLayout.LayoutParams passwordParams = matchWrap();
+        passwordParams.topMargin = dp(8);
+        card.addView(passwordInput, passwordParams);
+
+        EditText repeatInput = null;
+        if (!loginMode) {
+            repeatInput = authInput("\u015eifre tekrar", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            LinearLayout.LayoutParams repeatParams = matchWrap();
+            repeatParams.topMargin = dp(8);
+            card.addView(repeatInput, repeatParams);
+        }
+
+        final EditText finalRepeatInput = repeatInput;
+        Button primary = primaryButton(loginMode ? "Giri\u015f yap" : "Kay\u0131t ol", theme.accentColor);
+        primary.setOnClickListener(v -> authenticateWithFirebase(
+                !loginMode,
+                emailInput.getText().toString(),
+                passwordInput.getText().toString(),
+                finalRepeatInput == null ? "" : finalRepeatInput.getText().toString()
+        ));
+        LinearLayout.LayoutParams primaryParams = matchWrap();
+        primaryParams.topMargin = dp(12);
+        card.addView(primary, primaryParams);
+
+        Button switchMode = secondaryButton(loginMode ? "Hesab\u0131n\u0131z yok mu? Kay\u0131t ol" : "Zaten hesab\u0131n\u0131z var m\u0131? Giri\u015f yap");
+        switchMode.setOnClickListener(v -> renderAuthPanel(panel, !loginMode));
+        LinearLayout.LayoutParams switchParams = matchWrap();
+        switchParams.topMargin = dp(8);
+        card.addView(switchMode, switchParams);
+
+        if (loginMode) {
+            Button reset = secondaryButton("\u015eifremi unuttum");
+            reset.setOnClickListener(v -> sendPasswordReset(emailInput.getText().toString()));
+            LinearLayout.LayoutParams resetParams = matchWrap();
+            resetParams.topMargin = dp(8);
+            card.addView(reset, resetParams);
+        }
+
+        TextView footnote = textView(
+                "Kay\u0131t iste\u011fi olu\u015ftuktan sonra kullan\u0131m i\u00e7in y\u00f6netici onay\u0131 gerekir.",
+                12,
+                theme.mutedColor,
+                false
+        );
+        footnote.setGravity(Gravity.CENTER);
+        footnote.setPadding(dp(4), dp(12), dp(4), 0);
+        card.addView(footnote);
+    }
+
+    private EditText authInput(String hint, int inputType) {
+        AppThemeOption theme = currentTheme();
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(inputType);
+        input.setHint(ui(hint));
+        input.setTextColor(theme.textColor);
+        input.setHintTextColor(theme.mutedColor);
+        input.setTextSize(15);
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        input.setBackground(rounded(theme.surfaceAltColor, 8, theme.borderColor));
+        return input;
     }
 
     private View createAppHeader() {
@@ -957,6 +1156,12 @@ public final class MainActivity extends Activity {
     }
 
     private void openDrawer() {
+        if (!ensureNoMandatoryUpdate()) {
+            return;
+        }
+        if (authPanel != null && authPanel.getVisibility() == View.VISIBLE) {
+            return;
+        }
         if (drawerOverlay != null) {
             drawerOverlay.animate().cancel();
             if (drawerPanel != null) {
@@ -993,6 +1198,19 @@ public final class MainActivity extends Activity {
                         }
                     })
                     .start();
+        }
+    }
+
+    private void forceDrawerClosed() {
+        if (drawerOverlay != null) {
+            drawerOverlay.animate().cancel();
+            drawerOverlay.setVisibility(View.GONE);
+            drawerOverlay.setAlpha(1f);
+        }
+        if (drawerPanel != null) {
+            drawerPanel.animate().cancel();
+            int width = drawerPanel.getWidth() > 0 ? drawerPanel.getWidth() : Math.min(dp(328), getResources().getDisplayMetrics().widthPixels - dp(44));
+            drawerPanel.setTranslationX(-width);
         }
     }
 
@@ -1335,10 +1553,26 @@ public final class MainActivity extends Activity {
 
     private void renderLicenseSettings(LinearLayout panel) {
         renderSettingsHeader(panel, "Lisans");
+        addInfoSetting(panel, "Oturum", TextUtils.isEmpty(currentAuthEmail()) ? "Giriş yapılmadı" : currentAuthEmail());
         addInfoSetting(panel, "Lisans durumu", licenseStatusText());
+        addInfoSetting(panel, "Lisans bitişi", licenseExpiryLabel());
         addInfoSetting(panel, "Kayıt e-postası", licenseEmailLabel());
         addInfoSetting(panel, "Cihaz kimliği", shortDeviceId());
-        addActionSetting(panel, "E-posta ile kayıt ol", "Kullanım isteği oluştur ve yönetici onayı bekle", () -> showLicenseRegistrationDialog(panel));
+        addInfoSetting(panel, "Lisanslı cihaz", licenseDeviceLabel());
+        addInfoSetting(panel, "Cihaz değişim kilidi", licenseDeviceChangeLabel());
+        if (!isSignedIn()) {
+            addActionSetting(panel, "Kayıt / giriş ekranı", "E-posta ve şifre ile oturum aç", () -> showAuthPanel(false));
+        } else {
+            addActionSetting(panel, "Onay isteğini yenile", "Kullanım isteği oluştur ve yönetici onayı bekle", () -> registerLicenseEmail(currentAuthEmail(), panel));
+            addActionSetting(panel, "Çıkış yap", "Bu cihazdaki oturumu ve lisans bilgisini temizle", () -> confirm(
+                    "Çıkış yap",
+                    "Bu cihazdaki oturum kapatılsın mı?",
+                    () -> {
+                        signOut();
+                        renderLicenseSettings(panel);
+                    }
+            ));
+        }
         addActionSetting(panel, "Lisans anahtarı gir", licenseKeyLabel(), () -> showLicenseDialog(panel));
         addActionSetting(panel, "Onay durumunu kontrol et", "Sunucudan lisans/onay durumunu denetle", () -> validateLicense(false, panel));
         if (!TextUtils.isEmpty(getString(PREF_LICENSE_KEY, "")) || !TextUtils.isEmpty(getString(PREF_LICENSE_EMAIL, ""))) {
@@ -1785,6 +2019,9 @@ public final class MainActivity extends Activity {
         activePlatform = platform;
         updatePlatformHeader();
         hidePanels();
+        if (appHeaderView != null) {
+            appHeaderView.setVisibility(View.VISIBLE);
+        }
         platformView.setText(platform.name + " " + ui("paneli"));
         browserPanel.setVisibility(View.VISIBLE);
         updateBrowserUrl(platform.homeUrl);
@@ -1800,29 +2037,76 @@ public final class MainActivity extends Activity {
     }
 
     private void showDownloader() {
+        if (!ensureNoMandatoryUpdate()) {
+            return;
+        }
+        if (!isSignedIn()) {
+            showAuthPanel(false);
+            return;
+        }
         hidePanels();
+        if (appHeaderView != null) {
+            appHeaderView.setVisibility(View.VISIBLE);
+        }
         downloadPanel.setVisibility(View.VISIBLE);
         platformView.setText(ui("Link modu"));
     }
 
-    private void showDownloads() {
+    private void showAuthPanel(boolean loginMode) {
+        forceDrawerClosed();
         hidePanels();
+        if (appHeaderView != null) {
+            appHeaderView.setVisibility(View.GONE);
+        }
+        if (authPanel != null) {
+            authPanel.setVisibility(View.VISIBLE);
+            renderAuthPanel(authPanel, loginMode);
+        }
+    }
+
+    private void showDownloads() {
+        if (!ensureNoMandatoryUpdate()) {
+            return;
+        }
+        if (!isSignedIn()) {
+            showAuthPanel(true);
+            return;
+        }
+        hidePanels();
+        if (appHeaderView != null) {
+            appHeaderView.setVisibility(View.VISIBLE);
+        }
         downloadsPanel.setVisibility(View.VISIBLE);
         refreshDownloads();
     }
 
     private void showSettings() {
+        if (!ensureNoMandatoryUpdate()) {
+            return;
+        }
         hidePanels();
+        if (appHeaderView != null) {
+            appHeaderView.setVisibility(View.VISIBLE);
+        }
         settingsPanel.setVisibility(View.VISIBLE);
         renderSettingsHome(settingsPanel);
     }
 
     private void showAbout() {
+        if (!ensureNoMandatoryUpdate()) {
+            return;
+        }
         hidePanels();
+        if (appHeaderView != null) {
+            appHeaderView.setVisibility(View.VISIBLE);
+        }
         aboutPanel.setVisibility(View.VISIBLE);
     }
 
     private void hidePanels() {
+        if (authPanel != null) {
+            authPanel.setVisibility(View.GONE);
+        }
         if (downloadPanel != null) {
             downloadPanel.setVisibility(View.GONE);
         }
@@ -2319,17 +2603,13 @@ public final class MainActivity extends Activity {
     }
 
     private void maybeCheckAppUpdateOnStartup() {
-        if (!getBool(PREF_UPDATE_NOTIFICATIONS, false)) {
-            return;
-        }
-        long lastCheck = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getLong(PREF_APP_UPDATE_LAST_CHECK, 0L);
-        if (lastCheck > 0L && System.currentTimeMillis() - lastCheck < UPDATE_INTERVAL_MS) {
-            return;
-        }
         checkAppUpdate(true);
     }
 
     private void checkAppUpdate(boolean silent) {
+        if (mandatoryUpdateRequired) {
+            showMandatoryUpdateDialog(storedMandatoryUpdateInfo());
+        }
         if (!silent) {
             setBusy(true, "Uygulama güncellemesi denetleniyor...");
         }
@@ -2348,6 +2628,9 @@ public final class MainActivity extends Activity {
                 });
             } catch (Exception error) {
                 mainHandler.post(() -> {
+                    if (mandatoryUpdateRequired) {
+                        showMandatoryUpdateDialog(storedMandatoryUpdateInfo());
+                    }
                     if (!silent) {
                         setBusy(false, null);
                         setStatus("Uygulama güncellemesi denetlenemedi.", false);
@@ -2406,9 +2689,11 @@ public final class MainActivity extends Activity {
 
     private void handleAppUpdateInfo(AppUpdateInfo updateInfo, boolean silent) {
         if (updateInfo.newer) {
-            showAppUpdateDialog(updateInfo);
+            storeMandatoryUpdate(updateInfo);
+            showMandatoryUpdateDialog(updateInfo);
             return;
         }
+        clearMandatoryUpdateLock();
         if (!silent) {
             setStatus("Uygulama güncel.", true);
             new AlertDialog.Builder(this)
@@ -2418,6 +2703,57 @@ public final class MainActivity extends Activity {
                     .setPositiveButton(ui("Tamam"), null)
                     .show();
         }
+    }
+
+    private void restoreMandatoryUpdateLock() {
+        AppUpdateInfo stored = storedMandatoryUpdateInfo();
+        mandatoryUpdateRequired = stored != null && stored.newer;
+        if (mandatoryUpdateRequired) {
+            mainHandler.post(() -> showMandatoryUpdateDialog(stored));
+        } else {
+            clearMandatoryUpdateLock();
+        }
+    }
+
+    private AppUpdateInfo storedMandatoryUpdateInfo() {
+        String latestVersion = getString(PREF_MANDATORY_UPDATE_VERSION, "");
+        if (TextUtils.isEmpty(latestVersion) || compareVersions(latestVersion, currentAppVersion()) <= 0) {
+            return null;
+        }
+        String releaseName = getString(PREF_MANDATORY_UPDATE_RELEASE_NAME, "MetaFold Downloader " + latestVersion);
+        String htmlUrl = getString(PREF_MANDATORY_UPDATE_HTML_URL, GITHUB_RELEASES_URL);
+        String apkUrl = getString(PREF_MANDATORY_UPDATE_APK_URL, "");
+        return new AppUpdateInfo(releaseName, latestVersion, latestVersion, currentAppVersion(), htmlUrl, apkUrl, true);
+    }
+
+    private void storeMandatoryUpdate(AppUpdateInfo updateInfo) {
+        mandatoryUpdateRequired = true;
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(PREF_MANDATORY_UPDATE_VERSION, updateInfo.latestVersion)
+                .putString(PREF_MANDATORY_UPDATE_RELEASE_NAME, updateInfo.releaseName)
+                .putString(PREF_MANDATORY_UPDATE_HTML_URL, updateInfo.htmlUrl)
+                .putString(PREF_MANDATORY_UPDATE_APK_URL, updateInfo.apkUrl)
+                .apply();
+    }
+
+    private void clearMandatoryUpdateLock() {
+        mandatoryUpdateRequired = false;
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .remove(PREF_MANDATORY_UPDATE_VERSION)
+                .remove(PREF_MANDATORY_UPDATE_RELEASE_NAME)
+                .remove(PREF_MANDATORY_UPDATE_HTML_URL)
+                .remove(PREF_MANDATORY_UPDATE_APK_URL)
+                .apply();
+    }
+
+    private boolean ensureNoMandatoryUpdate() {
+        if (!mandatoryUpdateRequired) {
+            return true;
+        }
+        showMandatoryUpdateDialog(storedMandatoryUpdateInfo());
+        return false;
     }
 
     private void showAppUpdateDialog(AppUpdateInfo updateInfo) {
@@ -2434,11 +2770,52 @@ public final class MainActivity extends Activity {
         builder.show();
     }
 
+    private void showMandatoryUpdateDialog(AppUpdateInfo updateInfo) {
+        AppUpdateInfo info = updateInfo == null ? storedMandatoryUpdateInfo() : updateInfo;
+        if (info == null) {
+            return;
+        }
+        if (mandatoryUpdateDialog != null && mandatoryUpdateDialog.isShowing()) {
+            return;
+        }
+        mandatoryUpdateRequired = true;
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(ui("Zorunlu güncelleme"))
+                .setMessage(ui("Bu sürüm artık kullanılamaz.") + "\n\n" +
+                        ui("Kurulu sürüm") + ": " + info.currentVersion + "\n" +
+                        ui("Yeni sürüm") + ": " + info.latestLabel() + "\n\n" +
+                        ui("Devam etmek için uygulamayı güncelleyin."))
+                .setPositiveButton(ui("Release sayfasını aç"), null)
+                .setNeutralButton(TextUtils.isEmpty(info.apkUrl) ? ui("APK'yı aç") : ui("APK'yı aç"), null)
+                .setNegativeButton(ui("Uygulamayı kapat"), (dialogInterface, which) -> finish())
+                .create();
+        dialog.setCancelable(false);
+        dialog.setCanceledOnTouchOutside(false);
+        dialog.setOnDismissListener(dismissed -> {
+            if (mandatoryUpdateDialog == dialog) {
+                mandatoryUpdateDialog = null;
+            }
+        });
+        dialog.setOnShowListener(shown -> {
+            Button releaseButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (releaseButton != null) {
+                releaseButton.setOnClickListener(v -> openWebsite(info.htmlUrl));
+            }
+            Button apkButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+            if (apkButton != null) {
+                apkButton.setVisibility(TextUtils.isEmpty(info.apkUrl) ? View.GONE : View.VISIBLE);
+                apkButton.setOnClickListener(v -> openWebsite(info.apkUrl));
+            }
+        });
+        mandatoryUpdateDialog = dialog;
+        dialog.show();
+    }
+
     private String currentAppVersion() {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
-            return "3.9";
+            return "3.15";
         }
     }
 
@@ -2480,6 +2857,234 @@ public final class MainActivity extends Activity {
             return new String[]{"0"};
         }
         return cleaned.split("[^0-9]+");
+    }
+
+    private void authenticateWithFirebase(boolean register, String rawEmail, String password, String repeatPassword) {
+        String email = normalizeEmail(rawEmail);
+        if (!isValidEmail(email)) {
+            toast("Ge\u00e7erli bir e-posta girin");
+            return;
+        }
+        if (TextUtils.isEmpty(password) || password.length() < 6) {
+            toast("\u015eifre en az 6 karakter olmal\u0131");
+            return;
+        }
+        if (register && !password.equals(repeatPassword)) {
+            toast("\u015eifreler e\u015fle\u015fmiyor");
+            return;
+        }
+        if (!isFirestoreLicenseConfigured()) {
+            showFirestoreSetupDialog();
+            return;
+        }
+
+        setBusy(true, register ? "Kay\u0131t olu\u015fturuluyor..." : "Giri\u015f yap\u0131l\u0131yor...");
+        licenseExecutor.execute(() -> {
+            try {
+                AuthSession session = requestFirebaseAuth(register, email, password);
+                saveAuthSession(session);
+                LicenseResult result = requestLicenseRegistration(session.email);
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    applyLicenseResult(result);
+                    if (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE) {
+                        renderLicenseSettings(settingsPanel);
+                    }
+                    showDownloader();
+                    new AlertDialog.Builder(this)
+                            .setTitle(ui(result.active ? "Lisans etkin" : "Onay bekleniyor"))
+                            .setMessage(ui(result.active
+                                    ? "Hesab\u0131n\u0131z onayl\u0131. Uygulamay\u0131 kullanabilirsiniz."
+                                    : "Kay\u0131t iste\u011finiz al\u0131nd\u0131. Y\u00f6netici onay\u0131ndan sonra indirme \u00f6zellikleri a\u00e7\u0131l\u0131r."))
+                            .setPositiveButton(ui("Tamam"), null)
+                            .show();
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    outputView.setText(cleanError(error));
+                    new AlertDialog.Builder(this)
+                            .setTitle(ui(register ? "Kay\u0131t ba\u015far\u0131s\u0131z" : "Giri\u015f ba\u015far\u0131s\u0131z"))
+                            .setMessage(ui(cleanError(error)))
+                            .setPositiveButton(ui("Tamam"), null)
+                            .show();
+                });
+            }
+        });
+    }
+
+    private void sendPasswordReset(String rawEmail) {
+        String email = normalizeEmail(rawEmail);
+        if (!isValidEmail(email)) {
+            toast("Ge\u00e7erli bir e-posta girin");
+            return;
+        }
+        if (!isFirestoreLicenseConfigured()) {
+            showFirestoreSetupDialog();
+            return;
+        }
+        setBusy(true, "\u015eifre s\u0131f\u0131rlama e-postas\u0131 g\u00f6nderiliyor...");
+        licenseExecutor.execute(() -> {
+            try {
+                requestFirebasePasswordReset(email);
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    new AlertDialog.Builder(this)
+                            .setTitle(ui("\u015eifre s\u0131f\u0131rlama"))
+                            .setMessage(ui("\u015eifre s\u0131f\u0131rlama ba\u011flant\u0131s\u0131 e-posta adresinize g\u00f6nderildi."))
+                            .setPositiveButton(ui("Tamam"), null)
+                            .show();
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    setBusy(false, null);
+                    new AlertDialog.Builder(this)
+                            .setTitle(ui("\u015eifre s\u0131f\u0131rlama ba\u015far\u0131s\u0131z"))
+                            .setMessage(ui(cleanError(error)))
+                            .setPositiveButton(ui("Tamam"), null)
+                            .show();
+                });
+            }
+        });
+    }
+
+    private AuthSession requestFirebaseAuth(boolean register, String email, String password) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("email", email);
+        body.put("password", password);
+        body.put("returnSecureToken", true);
+        JSONObject response = firebaseAuthPost(register ? "accounts:signUp" : "accounts:signInWithPassword", body);
+        return new AuthSession(
+                normalizeEmail(response.optString("email", email)),
+                response.optString("idToken", ""),
+                response.optString("refreshToken", ""),
+                response.optString("localId", "")
+        );
+    }
+
+    private void requestFirebasePasswordReset(String email) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("requestType", "PASSWORD_RESET");
+        body.put("email", email);
+        firebaseAuthPost("accounts:sendOobCode", body);
+    }
+
+    private JSONObject firebaseAuthPost(String method, JSONObject body) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(firebaseAuthUrl(method)).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(12000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
+        int code = connection.getResponseCode();
+        String response = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        if (code < 200 || code >= 300) {
+            throw new IOException(firebaseAuthErrorMessage(response));
+        }
+        return TextUtils.isEmpty(response) ? new JSONObject() : new JSONObject(response);
+    }
+
+    private String firebaseAuthUrl(String method) {
+        return FIREBASE_AUTH_BASE_URL + method + "?key=" + FIREBASE_WEB_API_KEY;
+    }
+
+    private String firebaseAuthErrorMessage(String response) {
+        String message = "";
+        try {
+            JSONObject root = new JSONObject(response);
+            JSONObject error = root.optJSONObject("error");
+            if (error != null) {
+                message = error.optString("message", "");
+            }
+        } catch (Exception ignored) {
+            message = response;
+        }
+        if (message.contains("EMAIL_EXISTS")) {
+            return "Bu e-posta zaten kay\u0131tl\u0131. Giri\u015f yap\u0131n.";
+        }
+        if (message.contains("EMAIL_NOT_FOUND")) {
+            return "Bu e-posta ile hesap bulunamad\u0131.";
+        }
+        if (message.contains("INVALID_PASSWORD") || message.contains("INVALID_LOGIN_CREDENTIALS")) {
+            return "E-posta veya \u015fifre hatal\u0131.";
+        }
+        if (message.contains("WEAK_PASSWORD")) {
+            return "\u015eifre en az 6 karakter olmal\u0131.";
+        }
+        if (message.contains("USER_DISABLED")) {
+            return "Bu kullan\u0131c\u0131 hesab\u0131 devre d\u0131\u015f\u0131.";
+        }
+        if (message.contains("TOO_MANY_ATTEMPTS_TRY_LATER")) {
+            return "\u00c7ok fazla deneme yap\u0131ld\u0131. Biraz sonra tekrar deneyin.";
+        }
+        if (message.contains("CONFIGURATION_NOT_FOUND") || message.contains("OPERATION_NOT_ALLOWED")) {
+            return "Firebase Authentication kurulumu bulunamad\u0131. Firebase Console'da Authentication > Sign-in method b\u00f6l\u00fcm\u00fcnden Email/Password giri\u015fini etkinle\u015ftirin.";
+        }
+        if (message.contains("API key not valid")) {
+            return "Firebase Web API Key ge\u00e7ersiz veya bu proje i\u00e7in de\u011fil.";
+        }
+        return TextUtils.isEmpty(message) ? "Firebase oturum hatas\u0131." : message;
+    }
+
+    private void saveAuthSession(AuthSession session) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(PREF_AUTH_EMAIL, session.email)
+                .putString(PREF_AUTH_ID_TOKEN, session.idToken)
+                .putString(PREF_AUTH_REFRESH_TOKEN, session.refreshToken)
+                .putString(PREF_AUTH_LOCAL_ID, session.localId)
+                .putString(PREF_LICENSE_EMAIL, session.email)
+                .commit();
+    }
+
+    private void clearAuthSession() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .remove(PREF_AUTH_EMAIL)
+                .remove(PREF_AUTH_ID_TOKEN)
+                .remove(PREF_AUTH_REFRESH_TOKEN)
+                .remove(PREF_AUTH_LOCAL_ID)
+                .remove(PREF_LICENSE_KEY)
+                .remove(PREF_LICENSE_EMAIL)
+                .remove(PREF_LICENSE_REQUEST_ID)
+                .remove(PREF_LICENSE_STATUS)
+                .remove(PREF_LICENSE_OWNER)
+                .remove(PREF_LICENSE_EXPIRES_AT)
+                .remove(PREF_LICENSE_BOUND_DEVICE_ID)
+                .remove(PREF_LICENSE_BOUND_DEVICE_LABEL)
+                .remove(PREF_LICENSE_NEXT_DEVICE_CHANGE)
+                .remove(PREF_LICENSE_LAST_CHECK)
+                .apply();
+    }
+
+    private boolean isSignedIn() {
+        return !TextUtils.isEmpty(getString(PREF_AUTH_ID_TOKEN, ""))
+                && !TextUtils.isEmpty(getString(PREF_AUTH_EMAIL, ""));
+    }
+
+    private String currentAuthEmail() {
+        return getString(PREF_AUTH_EMAIL, "");
+    }
+
+    private void signOut() {
+        clearAuthSession();
+        toast("\u00c7\u0131k\u0131\u015f yap\u0131ld\u0131");
+        showAuthPanel(false);
+    }
+
+    private void showAuthRequiredDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(ui("Giri\u015f gerekli"))
+                .setMessage(ui("Devam etmek i\u00e7in kay\u0131t olun veya giri\u015f yap\u0131n."))
+                .setPositiveButton(ui("Giri\u015f yap"), (dialog, which) -> showAuthPanel(true))
+                .setNeutralButton(ui("Kay\u0131t ol"), (dialog, which) -> showAuthPanel(false))
+                .setNegativeButton(ui("Vazge\u00e7"), null)
+                .show();
     }
 
     private void showLicenseDialog(LinearLayout panel) {
@@ -2537,6 +3142,10 @@ public final class MainActivity extends Activity {
     }
 
     private void registerLicenseEmail(String email, LinearLayout panel) {
+        if (!isSignedIn()) {
+            showAuthPanel(false);
+            return;
+        }
         putString(PREF_LICENSE_EMAIL, email);
         putString(PREF_LICENSE_STATUS, LICENSE_STATUS_PENDING);
         if (!isFirestoreLicenseConfigured()) {
@@ -2546,7 +3155,7 @@ public final class MainActivity extends Activity {
         }
 
         setBusy(true, "Kayıt isteği gönderiliyor...");
-        executor.execute(() -> {
+        licenseExecutor.execute(() -> {
             try {
                 LicenseResult result = requestLicenseRegistration(email);
                 mainHandler.post(() -> {
@@ -2570,6 +3179,12 @@ public final class MainActivity extends Activity {
     }
 
     private void validateLicense(boolean silent, LinearLayout panel) {
+        if (!isSignedIn()) {
+            if (!silent) {
+                showAuthPanel(true);
+            }
+            return;
+        }
         String key = getString(PREF_LICENSE_KEY, "").trim();
         String email = getString(PREF_LICENSE_EMAIL, "").trim();
         if (TextUtils.isEmpty(key) && TextUtils.isEmpty(email)) {
@@ -2590,7 +3205,7 @@ public final class MainActivity extends Activity {
         if (!silent) {
             setBusy(true, "Lisans doğrulanıyor...");
         }
-        executor.execute(() -> {
+        licenseExecutor.execute(() -> {
             try {
                 LicenseResult result = requestLicenseValidation(key, email);
                 mainHandler.post(() -> {
@@ -2619,8 +3234,51 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void refreshLicenseSilently(boolean blockMessage) {
+        if (licenseRefreshInProgress || !isSignedIn() || !isFirestoreLicenseConfigured()) {
+            return;
+        }
+        String email = getString(PREF_LICENSE_EMAIL, "").trim();
+        if (TextUtils.isEmpty(email)) {
+            email = currentAuthEmail();
+        }
+        if (TextUtils.isEmpty(email)) {
+            return;
+        }
+        licenseRefreshInProgress = true;
+        final String checkedEmail = email;
+        licenseExecutor.execute(() -> {
+            try {
+                LicenseResult result = requestLicenseValidation("", checkedEmail);
+                mainHandler.post(() -> {
+                    licenseRefreshInProgress = false;
+                    applyLicenseResult(result);
+                    if (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE) {
+                        renderLicenseSettings(settingsPanel);
+                    }
+                    if (blockMessage && !result.active) {
+                        toast(result.message);
+                    }
+                });
+            } catch (Exception ignored) {
+                mainHandler.post(() -> {
+                    licenseRefreshInProgress = false;
+                    if (blockMessage) {
+                        toast("Lisans doğrulanamadı");
+                    }
+                });
+            }
+        });
+    }
+
+    private boolean needsLicenseRefresh() {
+        long lastCheck = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getLong(PREF_LICENSE_LAST_CHECK, 0L);
+        return lastCheck <= 0L || System.currentTimeMillis() - lastCheck > LICENSE_REFRESH_INTERVAL_MS;
+    }
+
     private LicenseResult requestLicenseRegistration(String email) throws Exception {
         String docId = licenseDocumentId(email);
+        long now = System.currentTimeMillis();
         JSONObject body = new JSONObject();
         JSONObject fields = new JSONObject();
         putFirestoreString(fields, "email", email);
@@ -2634,28 +3292,36 @@ public final class MainActivity extends Activity {
         putFirestoreString(fields, "expiresAt", "");
         putFirestoreString(fields, "licenseKey", "");
         putFirestoreString(fields, "createdAt", String.valueOf(System.currentTimeMillis()));
+        putFirestoreTimestamp(fields, "lastDeviceChangeAt", now);
+        putFirestoreTimestamp(fields, "nextDeviceChangeAt", now + DEVICE_CHANGE_COOLDOWN_MS);
         body.put("fields", fields);
 
         FirestoreResponse response = firestorePost(firestoreCollectionUrl(docId), body);
         if (response.code == HttpURLConnection.HTTP_CONFLICT || response.code == 409) {
             return requestLicenseValidation("", email);
         }
+        if (response.code == HttpURLConnection.HTTP_FORBIDDEN || response.code == 403) {
+            throw new IOException(firestorePermissionMessage());
+        }
         if (response.code < 200 || response.code >= 300) {
             throw new IOException("Firestore kayıt hatası HTTP " + response.code + ": " + response.body);
         }
-        return licenseResultFromFirestore(new JSONObject(response.body), email, docId);
+        return enforceDeviceBinding(licenseResultFromFirestore(new JSONObject(response.body), email, docId), docId);
     }
 
     private LicenseResult requestLicenseValidation(String key, String email) throws Exception {
         String docId = licenseDocumentId(email);
         FirestoreResponse response = firestoreGet(firestoreDocumentUrl(docId));
         if (response.code == HttpURLConnection.HTTP_NOT_FOUND || response.code == 404) {
-            return new LicenseResult(false, LICENSE_STATUS_PENDING, "Onay bekleniyor", "", "", "", email, requestIdForDocument(docId));
+            return new LicenseResult(false, LICENSE_STATUS_PENDING, "Onay bekleniyor", "", "", "", email, requestIdForDocument(docId), "", "", 0L);
+        }
+        if (response.code == HttpURLConnection.HTTP_FORBIDDEN || response.code == 403) {
+            throw new IOException(firestorePermissionMessage());
         }
         if (response.code < 200 || response.code >= 300) {
             throw new IOException("Firestore lisans kontrol hatası HTTP " + response.code + ": " + response.body);
         }
-        return licenseResultFromFirestore(new JSONObject(response.body), email, docId);
+        return enforceDeviceBinding(licenseResultFromFirestore(new JSONObject(response.body), email, docId), docId);
     }
 
     private LicenseResult licenseResultFromFirestore(JSONObject document, String fallbackEmail, String docId) {
@@ -2663,16 +3329,97 @@ public final class MainActivity extends Activity {
         String responseStatus = firestoreString(fields, "status");
         boolean active = LICENSE_STATUS_ACTIVE.equalsIgnoreCase(responseStatus);
         String status = active ? LICENSE_STATUS_ACTIVE : responseStatus;
-        if (!LICENSE_STATUS_INACTIVE.equals(status) && !LICENSE_STATUS_ACTIVE.equals(status)) {
+        if (!LICENSE_STATUS_INACTIVE.equals(status) && !LICENSE_STATUS_ACTIVE.equals(status) && !LICENSE_STATUS_DEVICE_LOCKED.equals(status)) {
             status = LICENSE_STATUS_PENDING;
         }
-        String message = active ? "Lisans etkin" : ("inactive".equals(status) ? "Lisans pasif" : "Onay bekleniyor");
         String owner = firestoreString(fields, "owner");
-        String expiresAt = firestoreString(fields, "expiresAt");
+        String expiresAt = firestoreStringOrTimestamp(fields, "expiresAt");
+        if (active && isLicenseExpired(expiresAt)) {
+            active = false;
+            status = LICENSE_STATUS_INACTIVE;
+        }
+        String message = active ? "Lisans etkin" : (isLicenseExpired(expiresAt) ? "Lisans süresi doldu" : ("inactive".equals(status) ? "Lisans pasif" : "Onay bekleniyor"));
         String licenseKey = normalizeLicenseKey(firestoreString(fields, "licenseKey"));
         String email = normalizeEmail(firstNonEmpty(firestoreString(fields, "email"), fallbackEmail));
         String requestId = firstNonEmpty(firestoreString(fields, "requestId"), requestIdForDocument(docId));
-        return new LicenseResult(active, status, message, owner, expiresAt, licenseKey, email, requestId);
+        String boundDeviceId = firestoreString(fields, "deviceId");
+        String boundDeviceLabel = firestoreString(fields, "deviceLabel");
+        long nextDeviceChangeAt = firestoreTimestampMillis(fields, "nextDeviceChangeAt");
+        return new LicenseResult(active, status, message, owner, expiresAt, licenseKey, email, requestId, boundDeviceId, boundDeviceLabel, nextDeviceChangeAt);
+    }
+
+    private LicenseResult enforceDeviceBinding(LicenseResult result, String docId) throws Exception {
+        if (!result.active || TextUtils.isEmpty(result.boundDeviceId) || deviceId().equals(result.boundDeviceId)) {
+            return result;
+        }
+        long now = System.currentTimeMillis();
+        if (result.nextDeviceChangeAt > now) {
+            return new LicenseResult(
+                    false,
+                    LICENSE_STATUS_DEVICE_LOCKED,
+                    "Bu lisans başka bir cihaza bağlı. Cihaz değişimi " + formatDateTime(result.nextDeviceChangeAt) + " sonrasında yapılabilir.",
+                    result.owner,
+                    result.expiresAt,
+                    result.licenseKey,
+                    result.email,
+                    result.requestId,
+                    result.boundDeviceId,
+                    result.boundDeviceLabel,
+                    result.nextDeviceChangeAt
+            );
+        }
+        return requestDeviceTransfer(docId, result);
+    }
+
+    private LicenseResult requestDeviceTransfer(String docId, LicenseResult previous) throws Exception {
+        long now = System.currentTimeMillis();
+        JSONObject body = new JSONObject();
+        JSONObject fields = new JSONObject();
+        putFirestoreString(fields, "deviceId", deviceId());
+        putFirestoreString(fields, "deviceLabel", Build.MANUFACTURER + " " + Build.MODEL);
+        putFirestoreString(fields, "appVersion", currentAppVersion());
+        putFirestoreTimestamp(fields, "lastDeviceChangeAt", now);
+        putFirestoreTimestamp(fields, "nextDeviceChangeAt", now + DEVICE_CHANGE_COOLDOWN_MS);
+        body.put("fields", fields);
+
+        FirestoreResponse response = firestorePatch(
+                firestoreDocumentUrl(docId),
+                body,
+                "deviceId",
+                "deviceLabel",
+                "appVersion",
+                "lastDeviceChangeAt",
+                "nextDeviceChangeAt"
+        );
+        if (response.code < 200 || response.code >= 300) {
+            return new LicenseResult(
+                    false,
+                    LICENSE_STATUS_DEVICE_LOCKED,
+                    "Cihaz değişimi şu anda yapılamıyor. Yeniden denemeden önce lisans ekranından onay durumunu kontrol edin.",
+                    previous.owner,
+                    previous.expiresAt,
+                    previous.licenseKey,
+                    previous.email,
+                    previous.requestId,
+                    previous.boundDeviceId,
+                    previous.boundDeviceLabel,
+                    previous.nextDeviceChangeAt
+            );
+        }
+        LicenseResult transferred = licenseResultFromFirestore(new JSONObject(response.body), previous.email, docId);
+        return new LicenseResult(
+                transferred.active,
+                transferred.status,
+                "Cihaz değişimi yapıldı. Bu hesap 7 gün boyunca bu cihaza bağlı kalacak.",
+                transferred.owner,
+                transferred.expiresAt,
+                transferred.licenseKey,
+                transferred.email,
+                transferred.requestId,
+                transferred.boundDeviceId,
+                transferred.boundDeviceLabel,
+                transferred.nextDeviceChangeAt
+        );
     }
 
     private void applyLicenseResult(LicenseResult result) {
@@ -2680,6 +3427,9 @@ public final class MainActivity extends Activity {
                 .putString(PREF_LICENSE_STATUS, result.status)
                 .putString(PREF_LICENSE_OWNER, result.owner)
                 .putString(PREF_LICENSE_EXPIRES_AT, result.expiresAt)
+                .putString(PREF_LICENSE_BOUND_DEVICE_ID, result.boundDeviceId)
+                .putString(PREF_LICENSE_BOUND_DEVICE_LABEL, result.boundDeviceLabel)
+                .putLong(PREF_LICENSE_NEXT_DEVICE_CHANGE, result.nextDeviceChangeAt)
                 .putLong(PREF_LICENSE_LAST_CHECK, System.currentTimeMillis());
         if (!TextUtils.isEmpty(result.licenseKey)) {
             editor.putString(PREF_LICENSE_KEY, result.licenseKey);
@@ -2702,15 +3452,21 @@ public final class MainActivity extends Activity {
                 .remove(PREF_LICENSE_STATUS)
                 .remove(PREF_LICENSE_OWNER)
                 .remove(PREF_LICENSE_EXPIRES_AT)
+                .remove(PREF_LICENSE_BOUND_DEVICE_ID)
+                .remove(PREF_LICENSE_BOUND_DEVICE_LABEL)
+                .remove(PREF_LICENSE_NEXT_DEVICE_CHANGE)
                 .remove(PREF_LICENSE_LAST_CHECK)
                 .apply();
     }
 
     private String licenseStatusText() {
         String status = getString(PREF_LICENSE_STATUS, "");
+        String expiresAt = getString(PREF_LICENSE_EXPIRES_AT, "");
+        if (LICENSE_STATUS_ACTIVE.equals(status) && isLicenseExpired(expiresAt)) {
+            return TextUtils.isEmpty(expiresAt) ? "Lisans süresi doldu" : "Lisans süresi doldu - " + expiresAt;
+        }
         if (LICENSE_STATUS_ACTIVE.equals(status)) {
             String owner = getString(PREF_LICENSE_OWNER, "");
-            String expiresAt = getString(PREF_LICENSE_EXPIRES_AT, "");
             String text = "Etkin";
             if (!TextUtils.isEmpty(owner)) {
                 text += " - " + owner;
@@ -2723,10 +3479,24 @@ public final class MainActivity extends Activity {
         if (LICENSE_STATUS_PENDING.equals(status)) {
             return "Anahtar kaydedildi, sunucu doğrulaması bekleniyor";
         }
+        if (LICENSE_STATUS_DEVICE_LOCKED.equals(status)) {
+            long nextChange = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getLong(PREF_LICENSE_NEXT_DEVICE_CHANGE, 0L);
+            return nextChange > 0
+                    ? "Bu lisans başka cihaza bağlı. Değişim zamanı: " + formatDateTime(nextChange)
+                    : "Bu lisans başka cihaza bağlı";
+        }
         if (LICENSE_STATUS_INACTIVE.equals(status)) {
             return "Pasif veya doğrulanamadı";
         }
         return "Lisans girilmedi";
+    }
+
+    private String licenseExpiryLabel() {
+        String expiresAt = getString(PREF_LICENSE_EXPIRES_AT, "");
+        if (TextUtils.isEmpty(expiresAt)) {
+            return "Süresiz";
+        }
+        return isLicenseExpired(expiresAt) ? "Süresi doldu - " + expiresAt : "Geçerli - " + expiresAt;
     }
 
     private String licenseEmailLabel() {
@@ -2736,6 +3506,28 @@ public final class MainActivity extends Activity {
         }
         String requestId = getString(PREF_LICENSE_REQUEST_ID, "");
         return TextUtils.isEmpty(requestId) ? email : email + " - " + requestId;
+    }
+
+    private String licenseDeviceLabel() {
+        String boundDeviceId = getString(PREF_LICENSE_BOUND_DEVICE_ID, "");
+        if (TextUtils.isEmpty(boundDeviceId)) {
+            return "Henüz cihaz bağlanmadı";
+        }
+        String label = getString(PREF_LICENSE_BOUND_DEVICE_LABEL, "");
+        String current = deviceId().equals(boundDeviceId) ? "Bu cihaz" : "Başka cihaz";
+        return TextUtils.isEmpty(label) ? current : current + " - " + label;
+    }
+
+    private String licenseDeviceChangeLabel() {
+        long nextChange = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getLong(PREF_LICENSE_NEXT_DEVICE_CHANGE, 0L);
+        if (nextChange <= 0L) {
+            return "Kayıt sonrası 7 gün kilitlenir";
+        }
+        long now = System.currentTimeMillis();
+        if (nextChange <= now) {
+            return "Cihaz değişimi yapılabilir";
+        }
+        return "Yeni cihaz için " + formatDateTime(nextChange) + " sonrası";
     }
 
     private String licenseKeyLabel() {
@@ -2760,7 +3552,7 @@ public final class MainActivity extends Activity {
     }
 
     private String licenseDocumentId(String email) {
-        return sha256Hex(normalizeEmail(email) + "|" + deviceId());
+        return sha256Hex(normalizeEmail(email));
     }
 
     private static String requestIdForDocument(String docId) {
@@ -2785,12 +3577,24 @@ public final class MainActivity extends Activity {
                 + FIRESTORE_LICENSE_COLLECTION;
     }
 
+    private String firestorePermissionMessage() {
+        return "Firestore izinleri kayıt isteğini reddetti. Firebase Console > Firestore > Rules ekranında uygulamanın güncel firestore.rules içeriğini Publish edin.";
+    }
+
+    private void setFirebaseAuthHeader(HttpURLConnection connection) {
+        String token = getString(PREF_AUTH_ID_TOKEN, "");
+        if (!TextUtils.isEmpty(token)) {
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+        }
+    }
+
     private FirestoreResponse firestoreGet(String url) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setConnectTimeout(12000);
         connection.setReadTimeout(12000);
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+        setFirebaseAuthHeader(connection);
         int code = connection.getResponseCode();
         String body = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
         return new FirestoreResponse(code, body);
@@ -2805,6 +3609,30 @@ public final class MainActivity extends Activity {
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+        setFirebaseAuthHeader(connection);
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
+        int code = connection.getResponseCode();
+        String response = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        return new FirestoreResponse(code, response);
+    }
+
+    private FirestoreResponse firestorePatch(String url, JSONObject body, String... updateMaskFields) throws IOException {
+        StringBuilder patchedUrl = new StringBuilder(url);
+        for (String field : updateMaskFields) {
+            patchedUrl.append("&updateMask.fieldPaths=").append(field);
+        }
+        HttpURLConnection connection = (HttpURLConnection) new URL(patchedUrl.toString()).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(12000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("X-HTTP-Method-Override", "PATCH");
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+        setFirebaseAuthHeader(connection);
         try (OutputStream output = connection.getOutputStream()) {
             output.write(body.toString().getBytes(StandardCharsets.UTF_8));
         }
@@ -2819,6 +3647,12 @@ public final class MainActivity extends Activity {
         fields.put(key, field);
     }
 
+    private static void putFirestoreTimestamp(JSONObject fields, String key, long millis) throws Exception {
+        JSONObject field = new JSONObject();
+        field.put("timestampValue", isoTimestamp(millis));
+        fields.put(key, field);
+    }
+
     private static String firestoreString(JSONObject fields, String key) {
         if (fields == null || TextUtils.isEmpty(key)) {
             return "";
@@ -2830,8 +3664,110 @@ public final class MainActivity extends Activity {
         return value.optString("stringValue", "");
     }
 
+    private static String firestoreStringOrTimestamp(JSONObject fields, String key) {
+        if (fields == null || TextUtils.isEmpty(key)) {
+            return "";
+        }
+        JSONObject value = fields.optJSONObject(key);
+        if (value == null) {
+            return "";
+        }
+        String stringValue = value.optString("stringValue", "");
+        if (!TextUtils.isEmpty(stringValue)) {
+            return stringValue;
+        }
+        return value.optString("timestampValue", "");
+    }
+
+    private static long firestoreTimestampMillis(JSONObject fields, String key) {
+        if (fields == null || TextUtils.isEmpty(key)) {
+            return 0L;
+        }
+        JSONObject value = fields.optJSONObject(key);
+        if (value == null) {
+            return 0L;
+        }
+        return parseFirestoreTimestamp(value.optString("timestampValue", ""));
+    }
+
+    private static String isoTimestamp(long millis) {
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
+        format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        return format.format(new Date(millis));
+    }
+
+    private static long parseFirestoreTimestamp(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (Exception ignored) {
+            // Try formatted timestamps next.
+        }
+        String[] patterns = new String[]{
+                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        };
+        for (String pattern : patterns) {
+            try {
+                SimpleDateFormat format = new SimpleDateFormat(pattern, Locale.US);
+                format.setTimeZone(TimeZone.getTimeZone("UTC"));
+                Date date = format.parse(value);
+                if (date != null) {
+                    return date.getTime();
+                }
+            } catch (Exception ignored) {
+                // Try the next timestamp format.
+            }
+        }
+        return 0L;
+    }
+
+    private static long licenseExpiryMillis(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return 0L;
+        }
+        long timestamp = parseFirestoreTimestamp(value);
+        if (timestamp > 0L) {
+            return timestamp;
+        }
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+            Date date = format.parse(value.trim());
+            if (date != null) {
+                return date.getTime() + (24L * 60L * 60L * 1000L) - 1L;
+            }
+        } catch (Exception ignored) {
+            // Unknown date format means no local expiry enforcement.
+        }
+        return 0L;
+    }
+
+    private static boolean isLicenseExpired(String expiresAt) {
+        long expiry = licenseExpiryMillis(expiresAt);
+        return expiry > 0L && System.currentTimeMillis() > expiry;
+    }
+
+    private String formatDateTime(long millis) {
+        if (millis <= 0L) {
+            return "-";
+        }
+        return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale.getDefault()).format(new Date(millis));
+    }
+
     private boolean ensureUsageApproved() {
+        if (!ensureNoMandatoryUpdate()) {
+            return false;
+        }
+        if (!isSignedIn()) {
+            showAuthRequiredDialog();
+            return false;
+        }
         if (isLicenseActive()) {
+            if (needsLicenseRefresh()) {
+                refreshLicenseSilently(false);
+            }
             return true;
         }
         showLicenseRequiredDialog();
@@ -2839,16 +3775,16 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isLicenseActive() {
-        return !LICENSE_REQUIRED || LICENSE_STATUS_ACTIVE.equals(getString(PREF_LICENSE_STATUS, ""));
+        return !LICENSE_REQUIRED || (LICENSE_STATUS_ACTIVE.equals(getString(PREF_LICENSE_STATUS, "")) && !isLicenseExpired(getString(PREF_LICENSE_EXPIRES_AT, "")));
     }
 
     private void showLicenseRequiredDialog() {
         new AlertDialog.Builder(this)
                 .setTitle(ui("Onay gerekli"))
                 .setMessage(ui("Bu özelliği kullanmak için e-posta ile kayıt olunmalı ve yönetici onayı verilmelidir."))
-                .setPositiveButton(ui("E-posta ile kayıt ol"), (dialog, which) -> {
+                .setPositiveButton(ui("Onay durumunu kontrol et"), (dialog, which) -> {
                     openLicenseSettings();
-                    showLicenseRegistrationDialog(settingsPanel);
+                    validateLicense(false, settingsPanel);
                 })
                 .setNeutralButton(ui("Lisans ekranı"), (dialog, which) -> openLicenseSettings())
                 .setNegativeButton(ui("Vazgeç"), null)
@@ -2857,6 +3793,9 @@ public final class MainActivity extends Activity {
 
     private void openLicenseSettings() {
         hidePanels();
+        if (appHeaderView != null) {
+            appHeaderView.setVisibility(View.VISIBLE);
+        }
         settingsPanel.setVisibility(View.VISIBLE);
         renderLicenseSettings(settingsPanel);
     }
@@ -4872,6 +5811,17 @@ public final class MainActivity extends Activity {
                     .replace("\nKlasör: ", "\nFolder: ")
                     .replace("\nUyarı: ", "\nWarning: ");
         }
+        if (value.startsWith("Yeni cihaz için ")) {
+            return value.replace("Yeni cihaz için ", "For a new device, after ")
+                    .replace(" sonrası", "");
+        }
+        if (value.startsWith("Bu lisans başka cihaza bağlı. Değişim zamanı: ")) {
+            return value.replace("Bu lisans başka cihaza bağlı. Değişim zamanı: ", "This license is bound to another device. Change time: ");
+        }
+        if (value.startsWith("Bu lisans başka bir cihaza bağlı. Cihaz değişimi ")) {
+            return value.replace("Bu lisans başka bir cihaza bağlı. Cihaz değişimi ", "This license is bound to another device. Device change is available after ")
+                    .replace(" sonrasında yapılabilir.", ".");
+        }
         return uiStatic(value);
     }
 
@@ -5027,9 +5977,72 @@ public final class MainActivity extends Activity {
             case "Yeni sürüm hazır": return "New version is ready";
             case "Yeni sürüm": return "New version";
             case "Güncelleme GitHub Releases üzerinden alınacak.": return "The update will be fetched through GitHub Releases.";
+            case "Zorunlu güncelleme": return "Required update";
+            case "Bu sürüm artık kullanılamaz.": return "This version can no longer be used.";
+            case "Devam etmek için uygulamayı güncelleyin.": return "Update the app to continue.";
+            case "Uygulamayı kapat": return "Close app";
             case "Release sayfasını aç": return "Open release page";
             case "APK'yı aç": return "Open APK";
             case "Tamam": return "OK";
+            case "Kayıt ol": return "Register";
+            case "Giriş yap": return "Sign in";
+            case "Güvenli indirme hesabınız": return "Your secure download account";
+            case "Hesabınıza giriş yapın": return "Sign in to your account";
+            case "Hesabınızı oluşturun": return "Create your account";
+            case "MetaFold Downloader kullanmak için e-posta hesabınızla devam edin.": return "Continue with your email account to use MetaFold Downloader.";
+            case "E-posta": return "Email";
+            case "Şifre": return "Password";
+            case "Şifre tekrar": return "Repeat password";
+            case "Hesabınız yok mu? Kayıt ol": return "No account? Register";
+            case "Zaten hesabınız var mı? Giriş yap": return "Already have an account? Sign in";
+            case "Şifremi unuttum": return "Forgot password";
+            case "Kayıt isteği oluştuktan sonra kullanım için yönetici onayı gerekir.": return "After registration, admin approval is required before use.";
+            case "Şifre en az 6 karakter olmalı": return "Password must be at least 6 characters";
+            case "Şifreler eşleşmiyor": return "Passwords do not match";
+            case "Kayıt oluşturuluyor...": return "Creating account...";
+            case "Giriş yapılıyor...": return "Signing in...";
+            case "Hesabınız onaylı. Uygulamayı kullanabilirsiniz.": return "Your account is approved. You can use the app.";
+            case "Kayıt isteğiniz alındı. Yönetici onayından sonra indirme özellikleri açılır.": return "Your registration request was received. Download features unlock after admin approval.";
+            case "Kayıt başarısız": return "Registration failed";
+            case "Giriş başarısız": return "Sign in failed";
+            case "Şifre sıfırlama e-postası gönderiliyor...": return "Sending password reset email...";
+            case "Şifre sıfırlama": return "Password reset";
+            case "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.": return "A password reset link was sent to your email address.";
+            case "Şifre sıfırlama başarısız": return "Password reset failed";
+            case "Giriş gerekli": return "Sign in required";
+            case "Devam etmek için kayıt olun veya giriş yapın.": return "Register or sign in to continue.";
+            case "Çıkış yapıldı": return "Signed out";
+            case "Bu e-posta zaten kayıtlı. Giriş yapın.": return "This email is already registered. Sign in.";
+            case "Bu e-posta ile hesap bulunamadı.": return "No account was found for this email.";
+            case "E-posta veya şifre hatalı.": return "Email or password is incorrect.";
+            case "Şifre en az 6 karakter olmalı.": return "Password must be at least 6 characters.";
+            case "Bu kullanıcı hesabı devre dışı.": return "This user account is disabled.";
+            case "Çok fazla deneme yapıldı. Biraz sonra tekrar deneyin.": return "Too many attempts. Try again later.";
+            case "Firebase Authentication içinde Email/Password girişi etkinleştirilmeli.": return "Email/Password sign-in must be enabled in Firebase Authentication.";
+            case "Firebase Authentication kurulumu bulunamadı. Firebase Console'da Authentication > Sign-in method bölümünden Email/Password girişini etkinleştirin.": return "Firebase Authentication setup was not found. Enable Email/Password sign-in from Firebase Console > Authentication > Sign-in method.";
+            case "Firestore izinleri kayıt isteğini reddetti. Firebase Console > Firestore > Rules ekranında uygulamanın güncel firestore.rules içeriğini Publish edin.": return "Firestore permissions rejected the registration request. Publish the app's latest firestore.rules content from Firebase Console > Firestore > Rules.";
+            case "Firebase Web API Key geçersiz veya bu proje için değil.": return "The Firebase Web API Key is invalid or belongs to another project.";
+            case "Firebase oturum hatası.": return "Firebase sign-in error.";
+            case "Oturum": return "Session";
+            case "Giriş yapılmadı": return "Not signed in";
+            case "Lisans kontrol ediliyor...": return "Checking license...";
+            case "Kayıt / giriş ekranı": return "Register / sign in screen";
+            case "E-posta ve şifre ile oturum aç": return "Sign in with email and password";
+            case "Onay isteğini yenile": return "Refresh approval request";
+            case "Çıkış yap": return "Sign out";
+            case "Bu cihazdaki oturumu ve lisans bilgisini temizle": return "Clear the session and license info on this device";
+            case "Bu cihazdaki oturum kapatılsın mı?": return "Sign out on this device?";
+            case "Lisanslı cihaz": return "Licensed device";
+            case "Cihaz değişim kilidi": return "Device change lock";
+            case "Henüz cihaz bağlanmadı": return "No device bound yet";
+            case "Bu cihaz": return "This device";
+            case "Başka cihaz": return "Another device";
+            case "Kayıt sonrası 7 gün kilitlenir": return "Locked for 7 days after registration";
+            case "Cihaz değişimi yapılabilir": return "Device change is available";
+            case "Bu lisans başka cihaza bağlı": return "This license is bound to another device";
+            case "Bu lisans başka bir cihaza bağlı. Cihaz değişimi ": return "This license is bound to another device. Device change is available after ";
+            case "Cihaz değişimi yapıldı. Bu hesap 7 gün boyunca bu cihaza bağlı kalacak.": return "Device change completed. This account will stay bound to this device for 7 days.";
+            case "Cihaz değişimi şu anda yapılamıyor. Yeniden denemeden önce lisans ekranından onay durumunu kontrol edin.": return "Device change is not available right now. Check approval status on the license screen before trying again.";
             case "Lisans": return "License";
             case "Lisans anahtarı ve cihaz doğrulaması": return "License key and device verification";
             case "Lisans durumu": return "License status";
@@ -5661,8 +6674,11 @@ public final class MainActivity extends Activity {
         final String licenseKey;
         final String email;
         final String requestId;
+        final String boundDeviceId;
+        final String boundDeviceLabel;
+        final long nextDeviceChangeAt;
 
-        LicenseResult(boolean active, String status, String message, String owner, String expiresAt, String licenseKey, String email, String requestId) {
+        LicenseResult(boolean active, String status, String message, String owner, String expiresAt, String licenseKey, String email, String requestId, String boundDeviceId, String boundDeviceLabel, long nextDeviceChangeAt) {
             this.active = active;
             this.status = status;
             this.message = message;
@@ -5671,6 +6687,23 @@ public final class MainActivity extends Activity {
             this.licenseKey = licenseKey;
             this.email = email;
             this.requestId = requestId;
+            this.boundDeviceId = boundDeviceId;
+            this.boundDeviceLabel = boundDeviceLabel;
+            this.nextDeviceChangeAt = nextDeviceChangeAt;
+        }
+    }
+
+    private static final class AuthSession {
+        final String email;
+        final String idToken;
+        final String refreshToken;
+        final String localId;
+
+        AuthSession(String email, String idToken, String refreshToken, String localId) {
+            this.email = email;
+            this.idToken = idToken;
+            this.refreshToken = refreshToken;
+            this.localId = localId;
         }
     }
 

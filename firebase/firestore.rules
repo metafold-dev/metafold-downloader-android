@@ -3,9 +3,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /license_requests/{licenseId} {
-      allow get: if licenseId.matches('^[a-f0-9]{64}$');
+      allow get: if request.auth != null
+        && licenseId.matches('^[a-f0-9]{64}$')
+        && resource.data.email == request.auth.token.email;
       allow list: if false;
-      allow create: if licenseId.matches('^[a-f0-9]{64}$')
+      allow create: if request.auth != null
+        && licenseId.matches('^[a-f0-9]{64}$')
         && request.resource.data.keys().hasOnly([
           'email',
           'deviceId',
@@ -17,15 +20,43 @@ service cloud.firestore {
           'owner',
           'expiresAt',
           'licenseKey',
-          'createdAt'
+          'createdAt',
+          'lastDeviceChangeAt',
+          'nextDeviceChangeAt'
         ])
         && request.resource.data.email is string
+        && request.resource.data.email == request.auth.token.email
         && request.resource.data.deviceId is string
+        && request.resource.data.deviceLabel is string
         && request.resource.data.status == 'pending'
         && request.resource.data.owner == ''
         && request.resource.data.expiresAt == ''
-        && request.resource.data.licenseKey == '';
-      allow update, delete: if false;
+        && request.resource.data.licenseKey == ''
+        && request.resource.data.lastDeviceChangeAt is timestamp
+        && request.resource.data.nextDeviceChangeAt is timestamp
+        && request.resource.data.nextDeviceChangeAt > request.time + duration.value(6, 'd');
+      allow update: if request.auth != null
+        && licenseId.matches('^[a-f0-9]{64}$')
+        && resource.data.email == request.auth.token.email
+        && request.resource.data.email == resource.data.email
+        && resource.data.status == 'active'
+        && request.resource.data.status == resource.data.status
+        && resource.data.nextDeviceChangeAt is timestamp
+        && resource.data.nextDeviceChangeAt <= request.time
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceLabel is string
+        && request.resource.data.deviceId != resource.data.deviceId
+        && request.resource.data.lastDeviceChangeAt is timestamp
+        && request.resource.data.nextDeviceChangeAt is timestamp
+        && request.resource.data.nextDeviceChangeAt > request.time + duration.value(6, 'd')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'deviceId',
+          'deviceLabel',
+          'appVersion',
+          'lastDeviceChangeAt',
+          'nextDeviceChangeAt'
+        ]);
+      allow delete: if false;
     }
 
     match /{document=**} {
