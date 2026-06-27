@@ -1,94 +1,74 @@
-# MetaFold Downloader Firebase License Backend
+# MetaFold Downloader Spark License Setup
 
-Bu klasor MetaFold Downloader icin ayri Firebase projesinde calisacak lisans ve onay sistemidir. Diger MetaFold uygulamalariyla ayni Firebase projesini kullanmayin.
+Bu klasor MetaFold Downloader icin ayri Firebase projesinde calisacak ucretsiz Spark plan lisans sistemidir. Cloud Functions yoktur, Blaze gerekmez.
 
-## Onerilen ayri proje
+## Firebase projesi
 
-Firebase Console'da yeni proje acin:
+Mevcut proje:
 
 ```text
-metafold-downloader-license
+metafold-downloader
 ```
-
-Proje ID baska bir hesap tarafindan alinmissa benzer bir ID secin ve deploy sonrasi Android uygulamadaki URL'leri buna gore guncelleyin.
 
 ## Kurulum
 
-Firebase CLI bu bilgisayarda kurulu degilse:
+Firebase Console'da Firestore zaten acildi. Bu klasordeki kurallar sadece uygulamanin `pending` kayit olusturmasina ve kendi kaydini okumasina izin verir. Kullanici uygulamadan `active` yapamaz.
 
-```powershell
-npm install -g firebase-tools
-firebase login
-```
-
-Bu klasorde:
+Kurallari deploy etmek icin Firebase CLI varsa:
 
 ```powershell
 cd C:\Users\Acer\Desktop\MetaFold_Servis\video_downloader_android\firebase
 copy .firebaserc.example .firebaserc
-firebase use --add
-firebase functions:secrets:set ADMIN_TOKEN
-cd functions
-npm install
-cd ..
-firebase deploy --only firestore,functions,hosting
+firebase login
+firebase use metafold-downloader
+firebase deploy --only firestore
 ```
 
-`ADMIN_TOKEN`, admin panelde e-posta kayitlarini onaylamak icin kullanacaginiz gizli anahtardir. APK icine konmaz.
+Firebase CLI kullanmak istemezseniz `firestore.rules` icindeki kurallari Firebase Console > Firestore > Rules alanina yapistirip Publish edebilirsiniz.
 
-## Android URL'leri
+## Android API Key
 
-Deploy sonrasi Cloud Functions URL'leri su formatta olur:
+Uygulamanin Firestore REST API'ye baglanmasi icin Firebase Web API Key gerekir.
+
+Firebase Console:
 
 ```text
-https://europe-west1-PROJECT_ID.cloudfunctions.net/registerLicense
-https://europe-west1-PROJECT_ID.cloudfunctions.net/validateLicense
+Project settings > General > Web API Key
 ```
 
-Bu iki adresi Android tarafinda `MainActivity.java` icindeki alanlara yazin:
+Bu degeri Android tarafinda `MainActivity.java` icindeki alana yazin:
 
 ```java
-private static final String LICENSE_REGISTER_URL = "https://europe-west1-PROJECT_ID.cloudfunctions.net/registerLicense";
-private static final String LICENSE_VALIDATE_URL = "https://europe-west1-PROJECT_ID.cloudfunctions.net/validateLicense";
+private static final String FIREBASE_WEB_API_KEY = "BURAYA_WEB_API_KEY";
 ```
 
-Sonra APK'yi yeniden build edin.
+`FIREBASE_PROJECT_ID` zaten `metafold-downloader` olarak ayarlandi.
 
 ## Lisans verme akisi
 
 1. Kullanici uygulamada e-posta ile kayit olur.
-2. Kayit Firestore `licenses` koleksiyonuna `pending` olarak duser.
-3. Hosting ile yayinlanan `admin.html` panelini acin.
-4. Cloud Functions base URL ve `ADMIN_TOKEN` girin.
-5. Kaydi secip `Onayla` butonuna basin.
-6. Kullanici uygulamada `Onay durumunu kontrol et` dediginde `active: true` alir.
+2. Firestore'da `license_requests` koleksiyonunda yeni dokuman olusur.
+3. Dokumani Firebase Console'dan acin.
+4. `status` alanini `pending` yerine `active` yapin.
+5. Isterseniz `owner`, `expiresAt`, `licenseKey` alanlarini da doldurun.
+6. Kullanici uygulamada `Onay durumunu kontrol et` dediginde uygulama acilir.
 
-## API cevaplari
+## Beklenen dokuman alanlari
 
-Onay bekleyen kullanici:
+```text
+collection: license_requests
 
-```json
-{
-  "active": false,
-  "status": "pending",
-  "message": "Onay bekleniyor",
-  "email": "kullanici@example.com",
-  "license_key": "MFD-ABCD-1234-EF56",
-  "request_id": "REQ-..."
-}
+email: kullanici@example.com
+deviceId: android-device-id
+deviceLabel: Samsung SM-...
+packageName: com.metafold.videodownloader
+appVersion: 3.9
+status: pending | active | inactive
+requestId: REQ-...
+owner: Ahmet Dogan
+expiresAt: 2027-12-31
+licenseKey: MFD-...
+createdAt: timestamp-ms
 ```
 
-Onayli kullanici:
-
-```json
-{
-  "active": true,
-  "status": "active",
-  "message": "Lisans etkin",
-  "email": "kullanici@example.com",
-  "license_key": "MFD-ABCD-1234-EF56",
-  "request_id": "REQ-...",
-  "owner": "Ahmet Dogan",
-  "expires_at": "2027-12-31"
-}
-```
+Spark planda Firestore ucretsiz kota 50 kisi icin fazlasiyla yeterlidir; video indirme Firebase uzerinden yapilmaz.

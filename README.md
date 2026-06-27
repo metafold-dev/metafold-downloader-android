@@ -45,64 +45,37 @@ Not: Android uygulamasi private GitHub reposuna tokensiz erisemez. Guncellemenin
 
 ## Lisans ve onay sistemi
 
-Uygulamada lisans sistemi e-posta + cihaz kimligi + yonetici onayi mantigiyla hazirlandi. Kullanici e-posta ile kayit istegi gonderir; siz backend panelinde bu istegi onayladiginizda uygulama `active: true` cevabini alir ve indirme/akis ozelliklerini kullanabilir.
+Uygulamada lisans sistemi e-posta + cihaz kimligi + yonetici onayi mantigiyla hazirlandi. Ucretsiz Firebase Spark planda calismasi icin Cloud Functions kullanilmaz; uygulama Firestore'a dogrudan `pending` kayit olusturur ve sadece kendi kaydini okur.
 
-Gercek takip icin `MainActivity.java` icindeki su adresleri kendi API adreslerinizle doldurun:
+Firebase Console'dan kaydi onaylamak icin `license_requests` koleksiyonunda ilgili dokumani acip:
 
-- `LICENSE_REGISTER_URL`: e-posta ile ilk kayit istegi
-- `LICENSE_VALIDATE_URL`: uygulama acilinca veya kullanici kontrol ettiginde onay/lisans durumu
+```text
+status: active
+```
 
-Bu uygulama icin Firebase tarafini diger MetaFold projelerinden ayri tutmak amaciyla `firebase/` klasorunde bagimsiz proje iskeleti hazirlandi. Oradaki `firebase/README.md` dosyasi yeni Firebase projesi, Cloud Functions, Firestore kurallari ve admin onay paneli kurulumunu anlatir.
+yapmaniz yeterlidir. `status: pending` onay bekler, `status: inactive` pasiftir.
 
-Kayit isteginde uygulama sunucuya sunlari gonderir:
+Android tarafinda `MainActivity.java` icindeki su alan doldurulmalidir:
+
+```java
+private static final String FIREBASE_WEB_API_KEY = "BURAYA_WEB_API_KEY";
+```
+
+Firebase tarafini diger MetaFold projelerinden ayri tutmak amaciyla `firebase/` klasorunde Spark uyumlu Firestore kurallari ve kurulum notlari bulunur.
+
+Kayit dokumani ornegi:
 
 ```json
 {
   "email": "kullanici@example.com",
-  "device_id": "android-device-id",
-  "device_label": "Samsung SM-...",
-  "package_name": "com.metafold.videodownloader",
-  "app_version": "3.9"
-}
-```
-
-Backend tarafinda tutulmasi mantikli alanlar:
-
-- `email`
-- `device_id`
-- `license_key`
-- `status`: `pending`, `active`, `inactive`
-- `owner`
-- `expires_at`
-- `created_at`
-- `approved_at`
-- `approved_by`
-
-Beklenen API cevabi:
-
-```json
-{
-  "active": true,
-  "status": "active",
-  "message": "Lisans etkin",
-  "email": "kullanici@example.com",
-  "license_key": "MFD-XXXX-XXXX",
-  "request_id": "REQ-1001",
-  "owner": "Ahmet Dogan",
-  "expires_at": "2027-12-31"
-}
-```
-
-Onay bekleyen kullanici icin:
-
-```json
-{
-  "active": false,
+  "deviceId": "android-device-id",
+  "deviceLabel": "Samsung SM-...",
+  "packageName": "com.metafold.videodownloader",
+  "appVersion": "3.9",
   "status": "pending",
-  "message": "Onay bekleniyor",
-  "email": "kullanici@example.com",
-  "request_id": "REQ-1001"
+  "requestId": "REQ-...",
+  "owner": "Ahmet Dogan",
+  "expiresAt": "2027-12-31",
+  "licenseKey": "MFD-..."
 }
 ```
-
-Reddedilen veya suresi biten lisans icin `status: "inactive"` dondurun.

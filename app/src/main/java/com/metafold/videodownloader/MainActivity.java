@@ -79,6 +79,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -176,8 +177,9 @@ public final class MainActivity extends Activity {
     private static final String GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/metafold-dev/metafold-downloader-android/releases/latest";
     private static final String GITHUB_RELEASES_URL = "https://github.com/metafold-dev/metafold-downloader-android/releases/latest";
     private static final boolean LICENSE_REQUIRED = true;
-    private static final String LICENSE_REGISTER_URL = "";
-    private static final String LICENSE_VALIDATE_URL = "";
+    private static final String FIREBASE_PROJECT_ID = "metafold-downloader";
+    private static final String FIREBASE_WEB_API_KEY = "";
+    private static final String FIRESTORE_LICENSE_COLLECTION = "license_requests";
     private static final String LICENSE_STATUS_ACTIVE = "active";
     private static final String LICENSE_STATUS_PENDING = "pending";
     private static final String LICENSE_STATUS_INACTIVE = "inactive";
@@ -2537,16 +2539,8 @@ public final class MainActivity extends Activity {
     private void registerLicenseEmail(String email, LinearLayout panel) {
         putString(PREF_LICENSE_EMAIL, email);
         putString(PREF_LICENSE_STATUS, LICENSE_STATUS_PENDING);
-        if (TextUtils.isEmpty(LICENSE_REGISTER_URL)) {
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                    .edit()
-                    .putLong(PREF_LICENSE_LAST_CHECK, System.currentTimeMillis())
-                    .apply();
-            new AlertDialog.Builder(this)
-                    .setTitle(ui("Onay bekleniyor"))
-                    .setMessage(ui("Kayıt isteği cihazda hazırlandı. Gerçek onay takibi için LICENSE_REGISTER_URL değerine kayıt API adresi eklenmeli."))
-                    .setPositiveButton(ui("Tamam"), null)
-                    .show();
+        if (!isFirestoreLicenseConfigured()) {
+            showFirestoreSetupDialog();
             renderLicenseSettings(panel);
             return;
         }
@@ -2585,18 +2579,9 @@ public final class MainActivity extends Activity {
             }
             return;
         }
-        if (TextUtils.isEmpty(LICENSE_VALIDATE_URL)) {
-            putString(PREF_LICENSE_STATUS, LICENSE_STATUS_PENDING);
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                    .edit()
-                    .putLong(PREF_LICENSE_LAST_CHECK, System.currentTimeMillis())
-                    .apply();
+        if (!isFirestoreLicenseConfigured()) {
             if (!silent) {
-                new AlertDialog.Builder(this)
-                        .setTitle(ui("Lisans sunucusu bekleniyor"))
-                        .setMessage(ui("Lisans bilgisi kaydedildi. Gerçek doğrulama için LICENSE_VALIDATE_URL değerine lisans API adresi eklenmeli."))
-                        .setPositiveButton(ui("Tamam"), null)
-                        .show();
+                showFirestoreSetupDialog();
                 renderLicenseSettings(panel);
             }
             return;
@@ -2635,79 +2620,58 @@ public final class MainActivity extends Activity {
     }
 
     private LicenseResult requestLicenseRegistration(String email) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(LICENSE_REGISTER_URL).openConnection();
-        connection.setConnectTimeout(12000);
-        connection.setReadTimeout(12000);
-        connection.setRequestMethod("POST");
-        connection.setDoOutput(true);
-        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-        connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+        String docId = licenseDocumentId(email);
+        JSONObject body = new JSONObject();
+        JSONObject fields = new JSONObject();
+        putFirestoreString(fields, "email", email);
+        putFirestoreString(fields, "deviceId", deviceId());
+        putFirestoreString(fields, "deviceLabel", Build.MANUFACTURER + " " + Build.MODEL);
+        putFirestoreString(fields, "packageName", getPackageName());
+        putFirestoreString(fields, "appVersion", currentAppVersion());
+        putFirestoreString(fields, "status", LICENSE_STATUS_PENDING);
+        putFirestoreString(fields, "requestId", requestIdForDocument(docId));
+        putFirestoreString(fields, "owner", "");
+        putFirestoreString(fields, "expiresAt", "");
+        putFirestoreString(fields, "licenseKey", "");
+        putFirestoreString(fields, "createdAt", String.valueOf(System.currentTimeMillis()));
+        body.put("fields", fields);
 
-        JSONObject request = baseLicenseRequest();
-        request.put("email", email);
-
-        try (OutputStream output = connection.getOutputStream()) {
-            output.write(request.toString().getBytes(StandardCharsets.UTF_8));
+        FirestoreResponse response = firestorePost(firestoreCollectionUrl(docId), body);
+        if (response.code == HttpURLConnection.HTTP_CONFLICT || response.code == 409) {
+            return requestLicenseValidation("", email);
         }
-
-        int code = connection.getResponseCode();
-        String body = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
-        if (code < 200 || code >= 300) {
-            throw new IOException("Lisans kayıt sunucusu HTTP " + code + ": " + body);
+        if (response.code < 200 || response.code >= 300) {
+            throw new IOException("Firestore kayıt hatası HTTP " + response.code + ": " + response.body);
         }
-        return licenseResultFromJson(new JSONObject(body), email);
+        return licenseResultFromFirestore(new JSONObject(response.body), email, docId);
     }
 
     private LicenseResult requestLicenseValidation(String key, String email) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(LICENSE_VALIDATE_URL).openConnection();
-        connection.setConnectTimeout(12000);
-        connection.setReadTimeout(12000);
-        connection.setRequestMethod("POST");
-        connection.setDoOutput(true);
-        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-        connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
-
-        JSONObject request = baseLicenseRequest();
-        request.put("license_key", key);
-        request.put("email", email);
-
-        try (OutputStream output = connection.getOutputStream()) {
-            output.write(request.toString().getBytes(StandardCharsets.UTF_8));
+        String docId = licenseDocumentId(email);
+        FirestoreResponse response = firestoreGet(firestoreDocumentUrl(docId));
+        if (response.code == HttpURLConnection.HTTP_NOT_FOUND || response.code == 404) {
+            return new LicenseResult(false, LICENSE_STATUS_PENDING, "Onay bekleniyor", "", "", "", email, requestIdForDocument(docId));
         }
-
-        int code = connection.getResponseCode();
-        String body = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
-        if (code < 200 || code >= 300) {
-            throw new IOException("Lisans sunucusu HTTP " + code + ": " + body);
+        if (response.code < 200 || response.code >= 300) {
+            throw new IOException("Firestore lisans kontrol hatası HTTP " + response.code + ": " + response.body);
         }
-
-        return licenseResultFromJson(new JSONObject(body), email);
+        return licenseResultFromFirestore(new JSONObject(response.body), email, docId);
     }
 
-    private JSONObject baseLicenseRequest() throws Exception {
-        JSONObject request = new JSONObject();
-        request.put("device_id", deviceId());
-        request.put("package_name", getPackageName());
-        request.put("app_version", currentAppVersion());
-        request.put("device_label", Build.MANUFACTURER + " " + Build.MODEL);
-        return request;
-    }
-
-    private LicenseResult licenseResultFromJson(JSONObject response, String fallbackEmail) {
-        String responseStatus = response.optString("status", "");
-        boolean active = response.optBoolean("active", false) || LICENSE_STATUS_ACTIVE.equalsIgnoreCase(responseStatus);
+    private LicenseResult licenseResultFromFirestore(JSONObject document, String fallbackEmail, String docId) {
+        JSONObject fields = document.optJSONObject("fields");
+        String responseStatus = firestoreString(fields, "status");
+        boolean active = LICENSE_STATUS_ACTIVE.equalsIgnoreCase(responseStatus);
         String status = active ? LICENSE_STATUS_ACTIVE : responseStatus;
         if (!LICENSE_STATUS_INACTIVE.equals(status) && !LICENSE_STATUS_ACTIVE.equals(status)) {
             status = LICENSE_STATUS_PENDING;
         }
-        String message = response.optString("message", active ? "Lisans etkin" : "Onay bekleniyor");
-        String owner = response.optString("owner", "");
-        String expiresAt = response.optString("expires_at", "");
-        String licenseKey = normalizeLicenseKey(response.optString("license_key", ""));
-        String email = normalizeEmail(response.optString("email", fallbackEmail));
-        String requestId = response.optString("request_id", "");
+        String message = active ? "Lisans etkin" : ("inactive".equals(status) ? "Lisans pasif" : "Onay bekleniyor");
+        String owner = firestoreString(fields, "owner");
+        String expiresAt = firestoreString(fields, "expiresAt");
+        String licenseKey = normalizeLicenseKey(firestoreString(fields, "licenseKey"));
+        String email = normalizeEmail(firstNonEmpty(firestoreString(fields, "email"), fallbackEmail));
+        String requestId = firstNonEmpty(firestoreString(fields, "requestId"), requestIdForDocument(docId));
         return new LicenseResult(active, status, message, owner, expiresAt, licenseKey, email, requestId);
     }
 
@@ -2783,6 +2747,89 @@ public final class MainActivity extends Activity {
         return "Anahtar: ******" + suffix;
     }
 
+    private boolean isFirestoreLicenseConfigured() {
+        return !TextUtils.isEmpty(FIREBASE_PROJECT_ID) && !TextUtils.isEmpty(FIREBASE_WEB_API_KEY);
+    }
+
+    private void showFirestoreSetupDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(ui("Firebase ayarı eksik"))
+                .setMessage(ui("Spark plan lisans sistemi için Firebase Web API Key uygulamaya eklenmeli."))
+                .setPositiveButton(ui("Tamam"), null)
+                .show();
+    }
+
+    private String licenseDocumentId(String email) {
+        return sha256Hex(normalizeEmail(email) + "|" + deviceId());
+    }
+
+    private static String requestIdForDocument(String docId) {
+        if (TextUtils.isEmpty(docId)) {
+            return "REQ-UNKNOWN";
+        }
+        return "REQ-" + docId.substring(0, Math.min(12, docId.length())).toUpperCase(Locale.US);
+    }
+
+    private String firestoreCollectionUrl(String docId) {
+        return firestoreBaseUrl() + "?documentId=" + docId + "&key=" + FIREBASE_WEB_API_KEY;
+    }
+
+    private String firestoreDocumentUrl(String docId) {
+        return firestoreBaseUrl() + "/" + docId + "?key=" + FIREBASE_WEB_API_KEY;
+    }
+
+    private String firestoreBaseUrl() {
+        return "https://firestore.googleapis.com/v1/projects/"
+                + FIREBASE_PROJECT_ID
+                + "/databases/(default)/documents/"
+                + FIRESTORE_LICENSE_COLLECTION;
+    }
+
+    private FirestoreResponse firestoreGet(String url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(12000);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+        int code = connection.getResponseCode();
+        String body = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        return new FirestoreResponse(code, body);
+    }
+
+    private FirestoreResponse firestorePost(String url, JSONObject body) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(12000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
+        int code = connection.getResponseCode();
+        String response = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        return new FirestoreResponse(code, response);
+    }
+
+    private static void putFirestoreString(JSONObject fields, String key, String value) throws Exception {
+        JSONObject field = new JSONObject();
+        field.put("stringValue", value == null ? "" : value);
+        fields.put(key, field);
+    }
+
+    private static String firestoreString(JSONObject fields, String key) {
+        if (fields == null || TextUtils.isEmpty(key)) {
+            return "";
+        }
+        JSONObject value = fields.optJSONObject(key);
+        if (value == null) {
+            return "";
+        }
+        return value.optString("stringValue", "");
+    }
+
     private boolean ensureUsageApproved() {
         if (isLicenseActive()) {
             return true;
@@ -2832,6 +2879,20 @@ public final class MainActivity extends Activity {
             return "";
         }
         return value.trim().replace(" ", "").toUpperCase(Locale.US);
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest((value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(bytes.length * 2);
+            for (byte current : bytes) {
+                builder.append(String.format(Locale.US, "%02x", current & 0xff));
+            }
+            return builder.toString();
+        } catch (Exception ignored) {
+            return String.valueOf(Math.abs((value == null ? "" : value).hashCode()));
+        }
     }
 
     private static String normalizeEmail(String value) {
@@ -5003,6 +5064,9 @@ public final class MainActivity extends Activity {
             case "Lisans doğrulanıyor...": return "Verifying license...";
             case "Lisans etkin": return "License active";
             case "Lisans doğrulanamadı": return "License could not be verified";
+            case "Lisans pasif": return "License inactive";
+            case "Firebase ayarı eksik": return "Firebase setting missing";
+            case "Spark plan lisans sistemi için Firebase Web API Key uygulamaya eklenmeli.": return "Add the Firebase Web API Key to the app for the Spark plan license system.";
             case "Etkin": return "Active";
             case "Anahtar kaydedildi, sunucu doğrulaması bekleniyor": return "Key saved, waiting for server verification";
             case "Pasif veya doğrulanamadı": return "Inactive or not verified";
@@ -5607,6 +5671,16 @@ public final class MainActivity extends Activity {
             this.licenseKey = licenseKey;
             this.email = email;
             this.requestId = requestId;
+        }
+    }
+
+    private static final class FirestoreResponse {
+        final int code;
+        final String body;
+
+        FirestoreResponse(int code, String body) {
+            this.code = code;
+            this.body = body;
         }
     }
 
