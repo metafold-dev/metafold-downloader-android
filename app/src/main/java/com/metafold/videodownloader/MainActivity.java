@@ -178,7 +178,7 @@ public final class MainActivity extends Activity {
     private static final String GITHUB_RELEASES_URL = "https://github.com/metafold-dev/metafold-downloader-android/releases/latest";
     private static final boolean LICENSE_REQUIRED = true;
     private static final String FIREBASE_PROJECT_ID = "metafold-downloader";
-    private static final String FIREBASE_WEB_API_KEY = "";
+    private static final String FIREBASE_WEB_API_KEY = "AIzaSyDp9eEdjo-pPS76MVTR8O-cmlWtYycXSy0";
     private static final String FIRESTORE_LICENSE_COLLECTION = "license_requests";
     private static final String LICENSE_STATUS_ACTIVE = "active";
     private static final String LICENSE_STATUS_PENDING = "pending";
