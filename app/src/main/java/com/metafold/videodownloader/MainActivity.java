@@ -284,6 +284,9 @@ public final class MainActivity extends Activity {
     private TextView activePlatformUrlView;
     private WebView webView;
     private AlertDialog mandatoryUpdateDialog;
+    private AlertDialog updateDownloadDialog;
+    private ProgressBar updateDownloadProgress;
+    private TextView updateDownloadStatus;
 
     private boolean downloaderReady;
     private boolean ffmpegReady;
@@ -308,6 +311,7 @@ public final class MainActivity extends Activity {
     private SocialPlatform activePlatform = PLATFORMS[0];
     private DownloadOption selectedOption;
     private File lastFile;
+    private File pendingUpdateApk;
     private Uri lastUri;
     private String lastMimeType = "video/mp4";
     private long lastBackPressedAt;
@@ -379,6 +383,16 @@ public final class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (pendingUpdateApk != null && pendingUpdateApk.exists() && canRequestPackageInstalls()) {
+            File apk = pendingUpdateApk;
+            pendingUpdateApk = null;
+            launchPackageInstaller(apk);
+        }
     }
 
     @Override
@@ -2990,7 +3004,7 @@ public final class MainActivity extends Activity {
                 .setPositiveButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl))
                 .setNegativeButton(ui("Vazgeç"), null);
         if (!TextUtils.isEmpty(updateInfo.apkUrl)) {
-            builder.setNeutralButton(ui("APK'yı aç"), (dialog, which) -> openWebsite(updateInfo.apkUrl));
+            builder.setNeutralButton(ui("Güncelle"), (dialog, which) -> openUpdateTarget(updateInfo));
         }
         builder.show();
     }
@@ -3018,7 +3032,230 @@ public final class MainActivity extends Activity {
     }
 
     private void openUpdateTarget(AppUpdateInfo updateInfo) {
-        openWebsite(TextUtils.isEmpty(updateInfo.apkUrl) ? updateInfo.htmlUrl : updateInfo.apkUrl);
+        if (updateInfo == null || TextUtils.isEmpty(updateInfo.apkUrl)) {
+            openWebsite(updateInfo == null ? GITHUB_RELEASES_URL : updateInfo.htmlUrl);
+            return;
+        }
+        downloadAndInstallUpdate(updateInfo);
+    }
+
+    private void downloadAndInstallUpdate(AppUpdateInfo updateInfo) {
+        showUpdateDownloadDialog(updateInfo);
+        executor.execute(() -> {
+            try {
+                File apk = downloadUpdateApk(updateInfo);
+                mainHandler.post(() -> {
+                    dismissUpdateDownloadDialog();
+                    setStatus("Güncelleme indirildi. Kurulum ekranı açılıyor...", true);
+                    installDownloadedUpdate(apk);
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    dismissUpdateDownloadDialog();
+                    setStatus("Güncelleme indirilemedi.", false);
+                    new AlertDialog.Builder(this)
+                            .setTitle(ui("Güncelleme indirilemedi"))
+                            .setMessage(cleanError(error))
+                            .setPositiveButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl))
+                            .setNegativeButton(ui("Vazgeç"), null)
+                            .show();
+                });
+            }
+        });
+    }
+
+    private File downloadUpdateApk(AppUpdateInfo updateInfo) throws IOException {
+        File updateDir = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "updates");
+        if (!updateDir.exists() && !updateDir.mkdirs()) {
+            throw new IOException("Güncelleme klasörü oluşturulamadı: " + updateDir.getAbsolutePath());
+        }
+        deleteOldUpdateApks(updateDir);
+
+        String version = normalizeVersionTag(firstNonEmpty(updateInfo.latestVersion, updateInfo.tagName, "latest"));
+        File output = new File(updateDir, "MetaFold-Downloader-v" + version + ".apk");
+        if (output.exists() && !output.delete()) {
+            output.deleteOnExit();
+        }
+
+        HttpURLConnection connection = openUpdateDownloadConnection(updateInfo.apkUrl);
+        int code = connection.getResponseCode();
+        if (code < 200 || code >= 300) {
+            String body = readHttpBody(connection.getErrorStream());
+            throw new IOException("APK indirilemedi. HTTP " + code + ": " + body);
+        }
+
+        long total = connection.getContentLengthLong();
+        long downloaded = 0L;
+        int lastPercent = -1;
+        byte[] buffer = new byte[1024 * 64];
+        try (InputStream input = connection.getInputStream();
+             OutputStream outputStream = new FileOutputStream(output)) {
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, read);
+                downloaded += read;
+                if (total > 0L) {
+                    int percent = Math.min(100, (int) ((downloaded * 100L) / total));
+                    if (percent != lastPercent) {
+                        lastPercent = percent;
+                        long currentDownloaded = downloaded;
+                        mainHandler.post(() -> updateUpdateDownloadProgress(percent, currentDownloaded, total));
+                    }
+                }
+            }
+        } finally {
+            connection.disconnect();
+        }
+
+        if (!output.exists() || output.length() <= 0L) {
+            throw new IOException("İndirilen APK boş görünüyor.");
+        }
+        mainHandler.post(() -> updateUpdateDownloadProgress(100, output.length(), Math.max(output.length(), total)));
+        return output;
+    }
+
+    private HttpURLConnection openUpdateDownloadConnection(String url) throws IOException {
+        String currentUrl = url;
+        for (int redirect = 0; redirect < 6; redirect++) {
+            HttpURLConnection connection = (HttpURLConnection) new URL(currentUrl).openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(45000);
+            connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+            int code = connection.getResponseCode();
+            if (code >= 300 && code < 400) {
+                String location = connection.getHeaderField("Location");
+                connection.disconnect();
+                if (TextUtils.isEmpty(location)) {
+                    throw new IOException("Güncelleme yönlendirmesi boş döndü.");
+                }
+                currentUrl = new URL(new URL(currentUrl), location).toString();
+                continue;
+            }
+            return connection;
+        }
+        throw new IOException("Güncelleme indirme yönlendirmesi çok fazla tekrarlandı.");
+    }
+
+    private void deleteOldUpdateApks(File updateDir) {
+        File[] files = updateDir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            if (file.isFile() && file.getName().toLowerCase(Locale.US).endsWith(".apk") && !file.delete()) {
+                file.deleteOnExit();
+            }
+        }
+    }
+
+    private void installDownloadedUpdate(File apk) {
+        if (apk == null || !apk.exists()) {
+            setStatus("Güncelleme APK dosyası bulunamadı.", false);
+            return;
+        }
+        if (!canRequestPackageInstalls()) {
+            pendingUpdateApk = apk;
+            showInstallPermissionDialog();
+            return;
+        }
+        launchPackageInstaller(apk);
+    }
+
+    private boolean canRequestPackageInstalls() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || getPackageManager().canRequestPackageInstalls();
+    }
+
+    private void showInstallPermissionDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(ui("Kurulum izni gerekli"))
+                .setMessage(ui("Android bu uygulamanın APK yükleyebilmesi için izin istiyor. İzni verdikten sonra kurulum ekranı otomatik açılacak."))
+                .setPositiveButton(ui("Ayarları aç"), (dialog, which) -> openInstallPermissionSettings())
+                .setNegativeButton(ui("Vazgeç"), null)
+                .show();
+    }
+
+    private void openInstallPermissionSettings() {
+        try {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Exception error) {
+            try {
+                startActivity(new Intent(Settings.ACTION_SECURITY_SETTINGS));
+            } catch (Exception ignored) {
+                setStatus("Kurulum izni ekranı açılamadı.", false);
+            }
+        }
+    }
+
+    private void launchPackageInstaller(File apk) {
+        try {
+            Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", apk);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, "application/vnd.android.package-archive");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            setStatus("Kurulum ekranı açıldı. Devam etmek için Android onayını verin.", true);
+        } catch (Exception error) {
+            setStatus("Kurulum ekranı açılamadı.", false);
+            new AlertDialog.Builder(this)
+                    .setTitle(ui("Kurulum ekranı açılamadı"))
+                    .setMessage(cleanError(error))
+                    .setPositiveButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(GITHUB_RELEASES_URL))
+                    .setNegativeButton(ui("Vazgeç"), null)
+                    .show();
+        }
+    }
+
+    private void showUpdateDownloadDialog(AppUpdateInfo updateInfo) {
+        dismissUpdateDownloadDialog();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(4), dp(8), dp(4), 0);
+
+        updateDownloadStatus = textView("Güncelleme indiriliyor...", 14, Color.rgb(23, 32, 29), false);
+        panel.addView(updateDownloadStatus, matchWrap());
+
+        updateDownloadProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        updateDownloadProgress.setMax(100);
+        updateDownloadProgress.setProgress(0);
+        LinearLayout.LayoutParams progressParams = matchWrap();
+        progressParams.topMargin = dp(12);
+        panel.addView(updateDownloadProgress, progressParams);
+
+        String version = updateInfo == null ? "" : updateInfo.latestLabel();
+        updateDownloadDialog = new AlertDialog.Builder(this)
+                .setTitle(ui("Güncelleme indiriliyor"))
+                .setMessage(TextUtils.isEmpty(version) ? null : ui("Yeni sürüm") + ": " + version)
+                .setView(panel)
+                .create();
+        updateDownloadDialog.setCancelable(false);
+        updateDownloadDialog.setCanceledOnTouchOutside(false);
+        updateDownloadDialog.show();
+    }
+
+    private void updateUpdateDownloadProgress(int percent, long downloaded, long total) {
+        if (updateDownloadProgress != null) {
+            updateDownloadProgress.setIndeterminate(total <= 0L);
+            updateDownloadProgress.setProgress(Math.max(0, Math.min(100, percent)));
+        }
+        if (updateDownloadStatus != null) {
+            String sizeText = total > 0L
+                    ? formatBytes(downloaded) + " / " + formatBytes(total)
+                    : formatBytes(downloaded);
+            updateDownloadStatus.setText(ui("Güncelleme indiriliyor...") + " %" + Math.max(0, Math.min(100, percent)) + "\n" + sizeText);
+        }
+    }
+
+    private void dismissUpdateDownloadDialog() {
+        if (updateDownloadDialog != null && updateDownloadDialog.isShowing()) {
+            updateDownloadDialog.dismiss();
+        }
+        updateDownloadDialog = null;
+        updateDownloadProgress = null;
+        updateDownloadStatus = null;
     }
 
     private void snoozeAppUpdate(AppUpdateInfo updateInfo) {
@@ -3053,7 +3290,7 @@ public final class MainActivity extends Activity {
                         ui("Yeni sürüm") + ": " + info.latestLabel() + "\n\n" +
                         ui("Devam etmek için uygulamayı güncelleyin."))
                 .setPositiveButton(ui("Release sayfasını aç"), null)
-                .setNeutralButton(TextUtils.isEmpty(info.apkUrl) ? ui("APK'yı aç") : ui("APK'yı aç"), null)
+                .setNeutralButton(ui("Güncelle"), null)
                 .setNegativeButton(ui("Uygulamayı kapat"), (dialogInterface, which) -> finish())
                 .create();
         dialog.setCancelable(false);
@@ -3071,7 +3308,10 @@ public final class MainActivity extends Activity {
             Button apkButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
             if (apkButton != null) {
                 apkButton.setVisibility(TextUtils.isEmpty(info.apkUrl) ? View.GONE : View.VISIBLE);
-                apkButton.setOnClickListener(v -> openWebsite(info.apkUrl));
+                apkButton.setOnClickListener(v -> {
+                    dialog.dismiss();
+                    openUpdateTarget(info);
+                });
             }
         });
         mandatoryUpdateDialog = dialog;
@@ -6343,6 +6583,19 @@ public final class MainActivity extends Activity {
             case "Yeni sürüm hazır": return "New version is ready";
             case "Yeni sürüm": return "New version";
             case "Güncelleme GitHub Releases üzerinden alınacak.": return "The update will be fetched through GitHub Releases.";
+            case "Güncelleme indiriliyor": return "Downloading update";
+            case "Güncelleme indiriliyor...": return "Downloading update...";
+            case "Güncelleme indirildi. Kurulum ekranı açılıyor...": return "Update downloaded. Opening installer...";
+            case "Güncelleme indirilemedi.": return "Update could not be downloaded.";
+            case "Güncelleme indirilemedi": return "Update could not be downloaded";
+            case "Güncelleme APK dosyası bulunamadı.": return "Update APK file was not found.";
+            case "Kurulum izni gerekli": return "Install permission required";
+            case "Android bu uygulamanın APK yükleyebilmesi için izin istiyor. İzni verdikten sonra kurulum ekranı otomatik açılacak.": return "Android requires permission before this app can install APKs. After you allow it, the installer will open automatically.";
+            case "Ayarları aç": return "Open settings";
+            case "Kurulum izni ekranı açılamadı.": return "Install permission settings could not be opened.";
+            case "Kurulum ekranı açıldı. Devam etmek için Android onayını verin.": return "Installer opened. Continue by approving the Android prompt.";
+            case "Kurulum ekranı açılamadı.": return "Installer could not be opened.";
+            case "Kurulum ekranı açılamadı": return "Installer could not be opened";
             case "Zorunlu güncelleme": return "Required update";
             case "Bu sürüm artık kullanılamaz.": return "This version can no longer be used.";
             case "Devam etmek için uygulamayı güncelleyin.": return "Update the app to continue.";
@@ -6639,6 +6892,21 @@ public final class MainActivity extends Activity {
 
     private void toast(String text) {
         Toast.makeText(this, ui(text), Toast.LENGTH_SHORT).show();
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024L) {
+            return bytes + " B";
+        }
+        double kb = bytes / 1024.0;
+        if (kb < 1024.0) {
+            return String.format(Locale.US, "%.1f KB", kb);
+        }
+        double mb = kb / 1024.0;
+        if (mb < 1024.0) {
+            return String.format(Locale.US, "%.1f MB", mb);
+        }
+        return String.format(Locale.US, "%.1f GB", mb / 1024.0);
     }
 
     private static boolean hasVideo(VideoFormat format) {
