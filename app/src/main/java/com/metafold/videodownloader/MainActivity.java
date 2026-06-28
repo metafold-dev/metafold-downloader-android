@@ -4647,6 +4647,12 @@ public final class MainActivity extends Activity {
             setStatus("Desteklenen platformlar: YouTube, Instagram, Facebook, TikTok, Pinterest, X.", false);
             return;
         }
+        if (requiresLoggedInPlatformSession(platform) && !hasPlatformSessionCookies(platform, normalizedUrl)) {
+            setStatus(platform + " oturumu gerekli.", false);
+            outputView.setText(ui(platformLoginMessage(platform)));
+            showPlatformLoginRequiredDialog(platform, normalizedUrl);
+            return;
+        }
         boolean playlistMode = isPlaylistModeEnabled(normalizedUrl);
         if (selectedOption == null || !normalizedUrl.equals(currentInfoUrl) || playlistMode != currentInfoPlaylistMode) {
             setStatus("Önce indirme seçeneklerini getirip kalite seçin.", false);
@@ -4784,7 +4790,9 @@ public final class MainActivity extends Activity {
                     startNextQueuedDownload();
                 });
             } catch (Exception error) {
-                String displayError = cancelRequested ? "İndirme iptal edildi." : cleanError(error);
+                String rawError = rawErrorText(error);
+                boolean platformLoginError = !cancelRequested && isPlatformLoginError(platform, rawError);
+                String displayError = cancelRequested ? "İndirme iptal edildi." : (platformLoginError ? platformLoginMessage(platform) : cleanError(error));
                 if (playlistMode && jobDir != null && !cancelRequested) {
                     try {
                         List<File> partialFiles = findDownloadedFiles(jobDir);
@@ -4828,6 +4836,7 @@ public final class MainActivity extends Activity {
                     }
                 }
                 final String errorMessage = displayError;
+                final boolean shouldShowPlatformLoginDialog = platformLoginError || isPlatformLoginError(platform, errorMessage);
                 mainHandler.post(() -> {
                     activePlaylistDownload = false;
                     setDownloading(false);
@@ -4836,7 +4845,7 @@ public final class MainActivity extends Activity {
                     setFileActionsEnabled(false);
                     markPendingPlaylistRows("Hata", Color.rgb(173, 52, 52));
                     outputView.setText(ui(errorMessage));
-                    if (isPlatformLoginError(platform, errorMessage)) {
+                    if (shouldShowPlatformLoginDialog) {
                         showPlatformLoginRequiredDialog(platform, normalizedUrl);
                     }
                     startNextQueuedDownload();
@@ -5651,6 +5660,32 @@ public final class MainActivity extends Activity {
         addUnique(urls, "https://x.com/");
         addUnique(urls, "https://twitter.com/");
         return urls;
+    }
+
+    private boolean requiresLoggedInPlatformSession(String platform) {
+        return "Instagram".equals(platform);
+    }
+
+    private boolean hasPlatformSessionCookies(String platform, String pageUrl) {
+        try {
+            CookieManager manager = CookieManager.getInstance();
+            for (String lookupUrl : cookieLookupUrls(pageUrl)) {
+                String raw = manager.getCookie(lookupUrl);
+                if (TextUtils.isEmpty(raw)) {
+                    continue;
+                }
+                String lower = raw.toLowerCase(Locale.US);
+                if ("Instagram".equals(platform) && (lower.contains("sessionid=") || lower.contains("ds_user_id="))) {
+                    return true;
+                }
+                if ("Facebook".equals(platform) && lower.contains("c_user=")) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+            // If cookies cannot be read, let the normal download error path handle it.
+        }
+        return false;
     }
 
     private void flushWebCookies() {
@@ -7078,17 +7113,14 @@ public final class MainActivity extends Activity {
     }
 
     private static String cleanError(Throwable error) {
-        String message = error == null ? "" : error.getMessage();
-        if (TextUtils.isEmpty(message) && error != null) {
-            message = error.toString();
-        }
+        String message = rawErrorText(error);
         String cleaned = stripOutdatedWarning(message == null ? "Bilinmeyen hata" : message);
         String lower = cleaned.toLowerCase(Locale.US);
         if (isPlatformLoginError("Instagram", cleaned)) {
-            return "Instagram oturumu gerekli. Uygulama içindeki Instagram ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın. Giriş yaptıysanız Ayarlar > Veri ve önbellek bölümünden web oturum çerezlerini temizleyip tekrar giriş yapın.";
+            return platformLoginMessage("Instagram");
         }
         if (isPlatformLoginError("Facebook", cleaned)) {
-            return "Facebook oturumu gerekli. Uygulama içindeki Facebook ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.";
+            return platformLoginMessage("Facebook");
         }
         if (lower.contains("no address associated with hostname")
                 || lower.contains("unable to download api page")
@@ -7100,6 +7132,44 @@ public final class MainActivity extends Activity {
             return "Ağ bağlantısı zaman aşımına uğradı. Bağlantıyı kontrol edip tekrar deneyin.";
         }
         return compactLine(cleaned, 1200);
+    }
+
+    private static String rawErrorText(Throwable error) {
+        if (error == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        if (!TextUtils.isEmpty(error.getMessage())) {
+            builder.append(error.getMessage());
+        }
+        Throwable cause = error.getCause();
+        while (cause != null) {
+            if (!TextUtils.isEmpty(cause.getMessage())) {
+                if (builder.length() > 0) {
+                    builder.append('\n');
+                }
+                builder.append(cause.getMessage());
+            }
+            cause = cause.getCause();
+        }
+        String asString = error.toString();
+        if (!TextUtils.isEmpty(asString)) {
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(asString);
+        }
+        return builder.length() == 0 ? "Bilinmeyen hata" : builder.toString();
+    }
+
+    private static String platformLoginMessage(String platform) {
+        if ("Instagram".equals(platform)) {
+            return "Instagram oturumu gerekli. Uygulama içindeki Instagram ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın. Giriş yaptıysanız Ayarlar > Veri ve önbellek bölümünden web oturum çerezlerini temizleyip tekrar giriş yapın.";
+        }
+        if ("Facebook".equals(platform)) {
+            return "Facebook oturumu gerekli. Uygulama içindeki Facebook ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.";
+        }
+        return "Platform oturumu gerekli. Uygulama içindeki platform ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.";
     }
 
     private static boolean isPlatformLoginError(String platform, String message) {
