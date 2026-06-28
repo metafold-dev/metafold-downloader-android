@@ -81,6 +81,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Method;
+import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -5058,10 +5059,12 @@ public final class MainActivity extends Activity {
                     });
                     return;
                 }
-                YoutubeDLRequest request = buildDownloadRequest(normalizedUrl, jobDir, option, cookiesFile, playlistMode);
-                YoutubeDL.getInstance().execute(request, PROCESS_ID, progressCallback);
-
-                List<File> downloadedFiles = findDownloadedFiles(jobDir);
+                List<File> downloadedFiles = tryDownloadInstagramPublicDirect(platform, normalizedUrl, jobDir, option);
+                if (downloadedFiles.isEmpty()) {
+                    YoutubeDLRequest request = buildDownloadRequest(normalizedUrl, jobDir, option, cookiesFile, playlistMode);
+                    YoutubeDL.getInstance().execute(request, PROCESS_ID, progressCallback);
+                    downloadedFiles = findDownloadedFiles(jobDir);
+                }
                 if (downloadedFiles.isEmpty()) {
                     throw new IOException("İndirilen dosya bulunamadı.");
                 }
@@ -5079,6 +5082,7 @@ public final class MainActivity extends Activity {
                 lastFile = downloaded;
                 lastUri = publicUri;
                 lastMimeType = mimeType;
+                final int downloadedFileCount = downloadedFiles.size();
 
                 mainHandler.post(() -> {
                     activePlaylistDownload = false;
@@ -5089,7 +5093,7 @@ public final class MainActivity extends Activity {
                     setFileActionsEnabled(true);
                     if (playlistMode) {
                         markPendingPlaylistRows("Atlandı", currentTheme().mutedColor);
-                        outputView.setText(ui("Seçim: " + option.label + "\nPlaylist dosya sayısı: " + downloadedFiles.size() + "\nKlasör: " + outputFolderLabel(option.audio)));
+                        outputView.setText(ui("Seçim: " + option.label + "\nPlaylist dosya sayısı: " + downloadedFileCount + "\nKlasör: " + outputFolderLabel(option.audio)));
                     } else {
                         outputView.setText(ui("Seçim: " + option.label + "\nDosya: " + outputFolderLabel(option.audio) + "/" + downloaded.getName()));
                     }
@@ -5271,6 +5275,815 @@ public final class MainActivity extends Activity {
 
     private static String mobileBrowserUserAgent() {
         return "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36";
+    }
+
+    private List<File> tryDownloadInstagramPublicDirect(String platform, String normalizedUrl, File jobDir, DownloadOption option) throws Exception {
+        if (!"Instagram".equals(platform) || jobDir == null || option == null) {
+            return Collections.emptyList();
+        }
+        try {
+            mainHandler.post(() -> setStatus("Instagram public medya aranıyor...", true));
+            InstagramPublicMedia media = fetchInstagramPublicMedia(normalizedUrl);
+            if (media == null || TextUtils.isEmpty(media.videoUrl)) {
+                return Collections.emptyList();
+            }
+            if (option.audio) {
+                mainHandler.post(() -> setStatus("Instagram public medya ses olarak hazırlanıyor...", true));
+                YoutubeDLRequest request = buildDirectMediaDownloadRequest(media, jobDir, option);
+                YoutubeDL.getInstance().execute(request, PROCESS_ID, progressCallback);
+                return findDownloadedFiles(jobDir);
+            }
+
+            File file = downloadDirectInstagramVideo(media, jobDir);
+            return file == null || !file.isFile() || file.length() <= 0L
+                    ? Collections.emptyList()
+                    : Collections.singletonList(file);
+        } catch (Exception error) {
+            if (cancelRequested) {
+                throw error;
+            }
+            return Collections.emptyList();
+        }
+    }
+
+    private YoutubeDLRequest buildDirectMediaDownloadRequest(InstagramPublicMedia media, File jobDir, DownloadOption option) {
+        YoutubeDLRequest request = new YoutubeDLRequest(media.videoUrl);
+        request.addOption("--no-mtime");
+        request.addOption("--no-warnings");
+        request.addOption("--socket-timeout", "20");
+        request.addOption("--retries", getString(PREF_MAX_RETRIES, "10"));
+        request.addOption("--add-header", "Referer:" + firstNonEmpty(media.referer, "https://www.instagram.com/"));
+        request.addOption("--add-header", "Origin:https://www.instagram.com");
+        request.addOption("--add-header", "User-Agent:" + mobileBrowserUserAgent());
+        String baseName = safeOutputBaseName(media.title, "Instagram-" + firstNonEmpty(media.shortcode, "video"));
+        request.addOption("-o", new File(jobDir, baseName + ".%(ext)s").getAbsolutePath());
+        if (option.audio) {
+            String audioFormat = getString(PREF_AUDIO_FORMAT, "MP3").toLowerCase(Locale.US);
+            if (!"m4a".equals(audioFormat) && !"opus".equals(audioFormat)) {
+                audioFormat = "mp3";
+            }
+            request.addOption("-x");
+            request.addOption("--audio-format", audioFormat);
+            request.addOption("--audio-quality", "0");
+        }
+        return request;
+    }
+
+    private InstagramPublicMedia fetchInstagramPublicMedia(String normalizedUrl) throws IOException {
+        InstagramPublicMedia graphQlMedia = fetchInstagramGraphQlMedia(normalizedUrl);
+        if (graphQlMedia != null && !TextUtils.isEmpty(graphQlMedia.videoUrl)) {
+            return graphQlMedia;
+        }
+
+        List<String> candidates = instagramPublicCandidateUrls(normalizedUrl);
+        for (String candidate : candidates) {
+            HttpURLConnection connection = null;
+            try {
+                connection = openInstagramConnection(candidate, "https://www.instagram.com/", false);
+                int code = connection.getResponseCode();
+                String body = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+                if (code >= 200 && code < 300) {
+                    InstagramPublicMedia media = parseInstagramPublicMedia(body, candidate, normalizedUrl);
+                    if (media != null && !TextUtils.isEmpty(media.videoUrl)) {
+                        return media;
+                    }
+                }
+            } catch (IOException ignored) {
+                // Try the next public Instagram surface before falling back to yt-dlp.
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }
+        return null;
+    }
+
+    private InstagramPublicMedia fetchInstagramGraphQlMedia(String normalizedUrl) throws IOException {
+        String shortcode = instagramShortcode(normalizedUrl);
+        String mediaId = instagramMediaIdFromShortcode(shortcode);
+        if (TextUtils.isEmpty(shortcode) || TextUtils.isEmpty(mediaId)) {
+            return null;
+        }
+
+        String referer = canonicalInstagramPermalink(normalizedUrl);
+        InstagramWebSession session = bootstrapInstagramWebSession(referer);
+        if (session == null || TextUtils.isEmpty(session.lsd)) {
+            return null;
+        }
+        requestInstagramRuling(session, mediaId, referer);
+
+        String variables = "{\"media_id\":\"" + mediaId + "\"}";
+        String body = "av=0"
+                + "&__d=www"
+                + "&__user=0"
+                + "&dpr=1"
+                + "&lsd=" + urlEncode(session.lsd)
+                + "&fb_api_caller_class=RelayModern"
+                + "&fb_api_req_friendly_name=PolarisLoggedOutDesktopWWWPostRootContentQuery"
+                + "&server_timestamps=true"
+                + "&variables=" + urlEncode(variables)
+                + "&doc_id=27130156389949648";
+
+        HttpURLConnection connection = null;
+        try {
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            connection = (HttpURLConnection) new URL("https://www.instagram.com/api/graphql").openConnection();
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(25000);
+            applyInstagramGraphQlHeaders(connection, session, referer);
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+            connection.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(bytes);
+            }
+            int code = connection.getResponseCode();
+            absorbSetCookies(connection, session.cookies);
+            String response = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+            if (code < 200 || code >= 300 || TextUtils.isEmpty(response) || !response.trim().startsWith("{")) {
+                return null;
+            }
+            JSONObject root = new JSONObject(response);
+            String videoUrl = cleanExtractedUrl(firstVideoUrlInJson(root));
+            if (TextUtils.isEmpty(videoUrl)) {
+                return null;
+            }
+            String title = cleanExtractedText(firstCaptionTextInJson(root));
+            if (TextUtils.isEmpty(title)) {
+                title = "Instagram video";
+            }
+            return new InstagramPublicMedia(videoUrl, title, referer, shortcode);
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private InstagramWebSession bootstrapInstagramWebSession(String referer) throws IOException {
+        Map<String, String> cookies = instagramInitialCookies();
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL("https://www.instagram.com/").openConnection();
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(20000);
+            connection.setRequestProperty("User-Agent", mobileBrowserUserAgent());
+            connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            connection.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7");
+            connection.setRequestProperty("Referer", firstNonEmpty(referer, "https://www.instagram.com/"));
+            String cookieHeader = cookieHeader(cookies);
+            if (!TextUtils.isEmpty(cookieHeader)) {
+                connection.setRequestProperty("Cookie", cookieHeader);
+            }
+            int code = connection.getResponseCode();
+            absorbSetCookies(connection, cookies);
+            String body = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+            return new InstagramWebSession(cookies, findInstagramLsdToken(body));
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private void requestInstagramRuling(InstagramWebSession session, String mediaId, String referer) {
+        HttpURLConnection connection = null;
+        try {
+            String url = "https://i.instagram.com/api/v1/web/get_ruling_for_content/?content_type=MEDIA&target_id=" + urlEncode(mediaId);
+            connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(15000);
+            connection.setRequestProperty("User-Agent", mobileBrowserUserAgent());
+            connection.setRequestProperty("Accept", "*/*");
+            connection.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7");
+            connection.setRequestProperty("Origin", "https://www.instagram.com");
+            connection.setRequestProperty("Referer", firstNonEmpty(referer, "https://www.instagram.com/"));
+            connection.setRequestProperty("X-IG-App-ID", "936619743392459");
+            connection.setRequestProperty("X-ASBD-ID", "359341");
+            connection.setRequestProperty("X-IG-WWW-Claim", "0");
+            String csrf = firstNonEmpty(session.cookies.get("csrftoken"), "");
+            if (!TextUtils.isEmpty(csrf)) {
+                connection.setRequestProperty("X-CSRFToken", csrf);
+            }
+            String cookieHeader = cookieHeader(session.cookies);
+            if (!TextUtils.isEmpty(cookieHeader)) {
+                connection.setRequestProperty("Cookie", cookieHeader);
+            }
+            connection.getResponseCode();
+            absorbSetCookies(connection, session.cookies);
+        } catch (Exception ignored) {
+            // The GraphQL request can still work if this warm-up endpoint is unavailable.
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private void applyInstagramGraphQlHeaders(HttpURLConnection connection, InstagramWebSession session, String referer) {
+        connection.setRequestProperty("User-Agent", mobileBrowserUserAgent());
+        connection.setRequestProperty("Accept", "*/*");
+        connection.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7");
+        connection.setRequestProperty("Origin", "https://www.instagram.com");
+        connection.setRequestProperty("Referer", firstNonEmpty(referer, "https://www.instagram.com/"));
+        connection.setRequestProperty("X-IG-App-ID", "936619743392459");
+        connection.setRequestProperty("X-ASBD-ID", "359341");
+        connection.setRequestProperty("X-IG-WWW-Claim", "0");
+        connection.setRequestProperty("X-FB-Friendly-Name", "PolarisLoggedOutDesktopWWWPostRootContentQuery");
+        connection.setRequestProperty("X-Requested-With", "XMLHttpRequest");
+        connection.setRequestProperty("Sec-Fetch-Site", "same-origin");
+        connection.setRequestProperty("Sec-Fetch-Mode", "cors");
+        connection.setRequestProperty("Sec-Fetch-Dest", "empty");
+        String csrf = firstNonEmpty(session.cookies.get("csrftoken"), "");
+        if (!TextUtils.isEmpty(csrf)) {
+            connection.setRequestProperty("X-CSRFToken", csrf);
+        }
+        if (!TextUtils.isEmpty(session.lsd)) {
+            connection.setRequestProperty("X-FB-LSD", session.lsd);
+        }
+        String cookieHeader = cookieHeader(session.cookies);
+        if (!TextUtils.isEmpty(cookieHeader)) {
+            connection.setRequestProperty("Cookie", cookieHeader);
+        }
+    }
+
+    private Map<String, String> instagramInitialCookies() {
+        Map<String, String> cookies = new LinkedHashMap<>();
+        try {
+            flushWebCookies();
+            parseCookieHeader(CookieManager.getInstance().getCookie("https://www.instagram.com/"), cookies);
+            parseCookieHeader(CookieManager.getInstance().getCookie("https://instagram.com/"), cookies);
+        } catch (Exception ignored) {
+            // Fresh public cookies will be collected from instagram.com below.
+        }
+        return cookies;
+    }
+
+    private static void absorbSetCookies(HttpURLConnection connection, Map<String, String> cookies) {
+        if (connection == null || cookies == null) {
+            return;
+        }
+        Map<String, List<String>> headers = connection.getHeaderFields();
+        if (headers == null) {
+            return;
+        }
+        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+            if (entry.getKey() == null || !"set-cookie".equalsIgnoreCase(entry.getKey()) || entry.getValue() == null) {
+                continue;
+            }
+            for (String value : entry.getValue()) {
+                parseCookieHeader(value, cookies);
+            }
+        }
+    }
+
+    private static void parseCookieHeader(String raw, Map<String, String> cookies) {
+        if (TextUtils.isEmpty(raw) || cookies == null) {
+            return;
+        }
+        String[] parts = raw.split(";");
+        for (String part : parts) {
+            String trimmed = part == null ? "" : part.trim();
+            int equals = trimmed.indexOf('=');
+            if (equals <= 0) {
+                continue;
+            }
+            String name = trimmed.substring(0, equals).trim();
+            String value = trimmed.substring(equals + 1).trim();
+            if (TextUtils.isEmpty(name)
+                    || "path".equalsIgnoreCase(name)
+                    || "domain".equalsIgnoreCase(name)
+                    || "expires".equalsIgnoreCase(name)
+                    || "max-age".equalsIgnoreCase(name)
+                    || "samesite".equalsIgnoreCase(name)) {
+                continue;
+            }
+            cookies.put(name, value);
+            break;
+        }
+    }
+
+    private static String cookieHeader(Map<String, String> cookies) {
+        if (cookies == null || cookies.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (Map.Entry<String, String> entry : cookies.entrySet()) {
+            if (TextUtils.isEmpty(entry.getKey()) || TextUtils.isEmpty(entry.getValue())) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append("; ");
+            }
+            builder.append(entry.getKey()).append('=').append(entry.getValue());
+        }
+        return builder.toString();
+    }
+
+    private static String findInstagramLsdToken(String html) {
+        if (TextUtils.isEmpty(html)) {
+            return "";
+        }
+        Matcher matcher = Pattern.compile("\\[\\\"LSD\\\",\\[\\],\\{\\\"token\\\":\\\"([^\\\"]+)\\\"", Pattern.CASE_INSENSITIVE).matcher(html);
+        if (matcher.find()) {
+            return decodeJsonEscapes(matcher.group(1));
+        }
+        matcher = Pattern.compile("\\\"lsd\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"", Pattern.CASE_INSENSITIVE).matcher(html);
+        return matcher.find() ? decodeJsonEscapes(matcher.group(1)) : "";
+    }
+
+    private static String instagramMediaIdFromShortcode(String shortcode) {
+        if (TextUtils.isEmpty(shortcode)) {
+            return "";
+        }
+        final String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        BigInteger value = BigInteger.ZERO;
+        for (int i = 0; i < shortcode.length(); i++) {
+            int index = alphabet.indexOf(shortcode.charAt(i));
+            if (index < 0) {
+                return "";
+            }
+            value = value.multiply(BigInteger.valueOf(64L)).add(BigInteger.valueOf(index));
+        }
+        return value.toString();
+    }
+
+    private static String firstVideoUrlInJson(Object node) {
+        if (node instanceof JSONObject) {
+            JSONObject object = (JSONObject) node;
+            JSONArray versions = object.optJSONArray("video_versions");
+            String versionUrl = firstVideoVersionUrl(versions);
+            if (!TextUtils.isEmpty(versionUrl)) {
+                return versionUrl;
+            }
+            String direct = firstNonEmpty(
+                    object.optString("video_url", ""),
+                    object.optString("playable_url", ""),
+                    object.optString("contentUrl", "")
+            );
+            if (!TextUtils.isEmpty(direct)) {
+                return direct;
+            }
+            for (java.util.Iterator<String> iterator = object.keys(); iterator.hasNext(); ) {
+                Object child = object.opt(iterator.next());
+                String nested = firstVideoUrlInJson(child);
+                if (!TextUtils.isEmpty(nested)) {
+                    return nested;
+                }
+            }
+        } else if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            for (int i = 0; i < array.length(); i++) {
+                String nested = firstVideoUrlInJson(array.opt(i));
+                if (!TextUtils.isEmpty(nested)) {
+                    return nested;
+                }
+            }
+        }
+        return "";
+    }
+
+    private static String firstVideoVersionUrl(JSONArray versions) {
+        if (versions == null || versions.length() == 0) {
+            return "";
+        }
+        String fallback = "";
+        int bestArea = -1;
+        for (int i = 0; i < versions.length(); i++) {
+            JSONObject version = versions.optJSONObject(i);
+            if (version == null) {
+                continue;
+            }
+            String url = version.optString("url", "");
+            if (TextUtils.isEmpty(url)) {
+                continue;
+            }
+            int width = version.optInt("width", 0);
+            int height = version.optInt("height", 0);
+            int area = width * height;
+            if (TextUtils.isEmpty(fallback) || area > bestArea) {
+                fallback = url;
+                bestArea = area;
+            }
+        }
+        return fallback;
+    }
+
+    private static String firstCaptionTextInJson(Object node) {
+        if (node instanceof JSONObject) {
+            JSONObject object = (JSONObject) node;
+            JSONObject caption = object.optJSONObject("caption");
+            if (caption != null && !TextUtils.isEmpty(caption.optString("text", ""))) {
+                return caption.optString("text", "");
+            }
+            String accessibility = object.optString("accessibility_caption", "");
+            if (!TextUtils.isEmpty(accessibility)) {
+                return accessibility;
+            }
+            for (java.util.Iterator<String> iterator = object.keys(); iterator.hasNext(); ) {
+                String nested = firstCaptionTextInJson(object.opt(iterator.next()));
+                if (!TextUtils.isEmpty(nested)) {
+                    return nested;
+                }
+            }
+        } else if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            for (int i = 0; i < array.length(); i++) {
+                String nested = firstCaptionTextInJson(array.opt(i));
+                if (!TextUtils.isEmpty(nested)) {
+                    return nested;
+                }
+            }
+        }
+        return "";
+    }
+
+    private static String urlEncode(String value) {
+        try {
+            return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8.name());
+        } catch (Exception ignored) {
+            return value == null ? "" : value;
+        }
+    }
+
+    private List<String> instagramPublicCandidateUrls(String normalizedUrl) {
+        List<String> urls = new ArrayList<>();
+        String canonical = canonicalInstagramPermalink(normalizedUrl);
+        addUnique(urls, canonical);
+        addUnique(urls, normalizedUrl);
+        String shortcode = instagramShortcode(canonical);
+        if (!TextUtils.isEmpty(shortcode)) {
+            String kind = instagramPermalinkKind(canonical);
+            if (TextUtils.isEmpty(kind)) {
+                kind = "reel";
+            }
+            String permalink = "https://www.instagram.com/" + kind + "/" + shortcode + "/";
+            addUnique(urls, permalink);
+            addUnique(urls, permalink + "embed/");
+            addUnique(urls, permalink + "?__a=1&__d=dis");
+            if (!"p".equals(kind)) {
+                addUnique(urls, "https://www.instagram.com/p/" + shortcode + "/");
+            }
+        }
+        return urls;
+    }
+
+    private String canonicalInstagramPermalink(String url) {
+        String normalized = normalizeUrl(url);
+        String shortcode = instagramShortcode(normalized);
+        if (TextUtils.isEmpty(shortcode)) {
+            return normalized;
+        }
+        String kind = instagramPermalinkKind(normalized);
+        if (TextUtils.isEmpty(kind)) {
+            kind = "reel";
+        }
+        return "https://www.instagram.com/" + kind + "/" + shortcode + "/";
+    }
+
+    private static String instagramPermalinkKind(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            List<String> segments = uri.getPathSegments();
+            if (segments.isEmpty()) {
+                return "";
+            }
+            String first = segments.get(0).toLowerCase(Locale.US);
+            if ("reels".equals(first)) {
+                return "reel";
+            }
+            if ("reel".equals(first) || "p".equals(first) || "tv".equals(first)) {
+                return first;
+            }
+        } catch (Exception ignored) {
+            // Keep the default fallback.
+        }
+        return "";
+    }
+
+    private static String instagramShortcode(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            List<String> segments = uri.getPathSegments();
+            if (segments.size() >= 2) {
+                String first = segments.get(0).toLowerCase(Locale.US);
+                if ("reel".equals(first) || "reels".equals(first) || "p".equals(first) || "tv".equals(first)) {
+                    return segments.get(1);
+                }
+            }
+        } catch (Exception ignored) {
+            // Regex fallback below.
+        }
+        Matcher matcher = Pattern.compile("/(?:reel|reels|p|tv)/([^/?#]+)/?", Pattern.CASE_INSENSITIVE).matcher(url == null ? "" : url);
+        return matcher.find() ? matcher.group(1) : "";
+    }
+
+    private InstagramPublicMedia parseInstagramPublicMedia(String body, String sourceUrl, String originalUrl) {
+        if (TextUtils.isEmpty(body)) {
+            return null;
+        }
+        String decodedBody = decodeBasicHtml(body);
+        String videoUrl = firstNonEmpty(
+                findMetaContent(decodedBody, "og:video"),
+                findMetaContent(decodedBody, "og:video:secure_url"),
+                findMetaContent(decodedBody, "twitter:player:stream"),
+                findJsonStringValue(body, "video_url"),
+                findJsonStringValue(decodedBody, "video_url"),
+                findJsonStringValue(body, "playable_url"),
+                findJsonStringValue(decodedBody, "playable_url"),
+                findJsonStringValue(body, "contentUrl"),
+                findJsonStringValue(decodedBody, "contentUrl")
+        );
+        videoUrl = cleanExtractedUrl(videoUrl);
+        if (TextUtils.isEmpty(videoUrl) || !videoUrl.startsWith("http")) {
+            return null;
+        }
+
+        String title = cleanExtractedText(firstNonEmpty(
+                findMetaContent(decodedBody, "og:title"),
+                findMetaContent(decodedBody, "twitter:title"),
+                findJsonStringValue(decodedBody, "title"),
+                "Instagram video"
+        ));
+        String shortcode = instagramShortcode(firstNonEmpty(originalUrl, sourceUrl));
+        String referer = canonicalInstagramPermalink(firstNonEmpty(originalUrl, sourceUrl));
+        return new InstagramPublicMedia(videoUrl, title, referer, shortcode);
+    }
+
+    private static String findMetaContent(String html, String key) {
+        if (TextUtils.isEmpty(html) || TextUtils.isEmpty(key)) {
+            return "";
+        }
+        Pattern tagPattern = Pattern.compile("<meta\\s+[^>]*(?:property|name)\\s*=\\s*([\"'])" + Pattern.quote(key) + "\\1[^>]*>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher tagMatcher = tagPattern.matcher(html);
+        while (tagMatcher.find()) {
+            String content = extractAttribute(tagMatcher.group(), "content");
+            if (!TextUtils.isEmpty(content)) {
+                return content;
+            }
+        }
+        return "";
+    }
+
+    private static String extractAttribute(String tag, String attribute) {
+        Matcher matcher = Pattern.compile("\\b" + Pattern.quote(attribute) + "\\s*=\\s*([\"'])(.*?)\\1", Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(tag == null ? "" : tag);
+        return matcher.find() ? matcher.group(2) : "";
+    }
+
+    private static String findJsonStringValue(String text, String key) {
+        if (TextUtils.isEmpty(text) || TextUtils.isEmpty(key)) {
+            return "";
+        }
+        Pattern pattern = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*\"(.*?)\"", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher matcher = pattern.matcher(text);
+        while (matcher.find()) {
+            String value = cleanExtractedUrl(matcher.group(1));
+            if (!TextUtils.isEmpty(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private static String cleanExtractedUrl(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return "";
+        }
+        String cleaned = decodeJsonEscapes(decodeBasicHtml(value.trim()))
+                .replace("\\/", "/")
+                .replace("\\u0026", "&")
+                .replace("\\u003d", "=")
+                .replace("\\u003f", "?")
+                .replace("\\u002f", "/");
+        cleaned = decodeBasicHtml(cleaned).trim();
+        if ((cleaned.startsWith("\"") && cleaned.endsWith("\""))
+                || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
+        }
+        return cleaned;
+    }
+
+    private static String cleanExtractedText(String value) {
+        String cleaned = decodeJsonEscapes(decodeBasicHtml(value == null ? "" : value));
+        cleaned = cleaned.replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
+        return TextUtils.isEmpty(cleaned) ? "Instagram video" : cleaned;
+    }
+
+    private static String decodeBasicHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .replace("&#34;", "\"")
+                .replace("&#x22;", "\"")
+                .replace("&#39;", "'")
+                .replace("&#x27;", "'")
+                .replace("&#47;", "/")
+                .replace("&#x2F;", "/")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">");
+    }
+
+    private static String decodeJsonEscapes(String value) {
+        if (TextUtils.isEmpty(value) || value.indexOf('\\') < 0) {
+            return value == null ? "" : value;
+        }
+        StringBuilder builder = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            if (current != '\\' || i + 1 >= value.length()) {
+                builder.append(current);
+                continue;
+            }
+            char next = value.charAt(++i);
+            if (next == 'u' && i + 4 < value.length()) {
+                String hex = value.substring(i + 1, i + 5);
+                try {
+                    builder.append((char) Integer.parseInt(hex, 16));
+                    i += 4;
+                    continue;
+                } catch (NumberFormatException ignored) {
+                    builder.append("\\u");
+                    continue;
+                }
+            }
+            switch (next) {
+                case '/':
+                case '\\':
+                case '"':
+                    builder.append(next);
+                    break;
+                case 'n':
+                    builder.append('\n');
+                    break;
+                case 'r':
+                    builder.append('\r');
+                    break;
+                case 't':
+                    builder.append('\t');
+                    break;
+                default:
+                    builder.append(next);
+                    break;
+            }
+        }
+        return builder.toString();
+    }
+
+    private File downloadDirectInstagramVideo(InstagramPublicMedia media, File jobDir) throws IOException {
+        HttpURLConnection connection = openInstagramConnection(media.videoUrl, media.referer, true);
+        try {
+            int code = connection.getResponseCode();
+            if (code < 200 || code >= 300) {
+                throw new IOException("Instagram medya dosyası indirilemedi. HTTP " + code);
+            }
+            long total = connection.getContentLengthLong();
+            String extension = mediaExtension(media.videoUrl, connection.getContentType());
+            String baseName = safeOutputBaseName(media.title, "Instagram-" + firstNonEmpty(media.shortcode, "video"));
+            File output = uniqueOutputFile(jobDir, baseName, extension);
+            byte[] buffer = new byte[1024 * 64];
+            long downloaded = 0L;
+            int lastPercent = -1;
+            mainHandler.post(() -> {
+                progressBar.setIndeterminate(total <= 0L);
+                setStatus("Instagram public medya indiriliyor...", true);
+            });
+            try (InputStream input = connection.getInputStream();
+                 OutputStream outputStream = new FileOutputStream(output)) {
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    if (cancelRequested) {
+                        throw new IOException("İndirme iptal edildi.");
+                    }
+                    outputStream.write(buffer, 0, read);
+                    downloaded += read;
+                    if (total > 0L) {
+                        int percent = Math.min(100, (int) ((downloaded * 100L) / total));
+                        if (percent != lastPercent) {
+                            lastPercent = percent;
+                            long currentDownloaded = downloaded;
+                            mainHandler.post(() -> {
+                                progressBar.setIndeterminate(false);
+                                progressBar.setProgress(percent);
+                                setStatus("Instagram public medya indiriliyor... %" + percent + " - " + formatBytes(currentDownloaded) + " / " + formatBytes(total), true);
+                            });
+                        }
+                    }
+                }
+            }
+            if (!output.isFile() || output.length() <= 0L) {
+                throw new IOException("Instagram medya dosyası boş görünüyor.");
+            }
+            mainHandler.post(() -> {
+                progressBar.setIndeterminate(false);
+                progressBar.setProgress(100);
+                setStatus("Instagram public medya indirildi.", true);
+            });
+            return output;
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private HttpURLConnection openInstagramConnection(String url, String referer, boolean media) throws IOException {
+        String currentUrl = url;
+        for (int redirect = 0; redirect < 6; redirect++) {
+            HttpURLConnection connection = (HttpURLConnection) new URL(currentUrl).openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(media ? 45000 : 20000);
+            connection.setRequestProperty("User-Agent", mobileBrowserUserAgent());
+            connection.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7");
+            connection.setRequestProperty("Referer", firstNonEmpty(referer, "https://www.instagram.com/"));
+            connection.setRequestProperty("Origin", "https://www.instagram.com");
+            connection.setRequestProperty("X-IG-App-ID", "936619743392459");
+            connection.setRequestProperty("Accept", media
+                    ? "video/mp4,video/*,*/*;q=0.8"
+                    : "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7");
+            String cookieHeader = instagramSessionCookieHeader();
+            if (!TextUtils.isEmpty(cookieHeader)) {
+                connection.setRequestProperty("Cookie", cookieHeader);
+            }
+            int code = connection.getResponseCode();
+            if (code >= 300 && code < 400) {
+                String location = connection.getHeaderField("Location");
+                connection.disconnect();
+                if (TextUtils.isEmpty(location)) {
+                    throw new IOException("Instagram yönlendirmesi boş döndü.");
+                }
+                currentUrl = new URL(new URL(currentUrl), location).toString();
+                continue;
+            }
+            return connection;
+        }
+        throw new IOException("Instagram yönlendirmesi çok fazla tekrarlandı.");
+    }
+
+    private String instagramSessionCookieHeader() {
+        try {
+            flushWebCookies();
+            String raw = CookieManager.getInstance().getCookie("https://www.instagram.com/");
+            if (raw != null && raw.toLowerCase(Locale.US).contains("sessionid=")) {
+                return raw;
+            }
+        } catch (Exception ignored) {
+            // Public downloads should continue without cookies.
+        }
+        return "";
+    }
+
+    private static String safeOutputBaseName(String title, String fallback) {
+        String value = firstNonEmpty(title, fallback, "Instagram-video");
+        value = value.replaceAll("[\\\\/:*?\"<>|\\r\\n\\t]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (TextUtils.isEmpty(value)) {
+            value = "Instagram-video";
+        }
+        if (value.length() > 96) {
+            value = value.substring(0, 96).trim();
+        }
+        return value;
+    }
+
+    private static File uniqueOutputFile(File directory, String baseName, String extension) {
+        String safeExtension = TextUtils.isEmpty(extension) ? "mp4" : extension.toLowerCase(Locale.US);
+        File output = new File(directory, baseName + "." + safeExtension);
+        int index = 2;
+        while (output.exists()) {
+            output = new File(directory, baseName + "-" + index + "." + safeExtension);
+            index++;
+        }
+        return output;
+    }
+
+    private static String mediaExtension(String url, String contentType) {
+        String lowerType = contentType == null ? "" : contentType.toLowerCase(Locale.US);
+        if (lowerType.contains("mp4")) {
+            return "mp4";
+        }
+        if (lowerType.contains("webm")) {
+            return "webm";
+        }
+        try {
+            String path = new URI(url).getPath();
+            int dot = path == null ? -1 : path.lastIndexOf('.');
+            if (dot >= 0 && dot < path.length() - 1) {
+                String extension = path.substring(dot + 1).toLowerCase(Locale.US);
+                if (extension.matches("[a-z0-9]{2,5}")) {
+                    return extension;
+                }
+            }
+        } catch (Exception ignored) {
+            // Keep mp4 as the safest Instagram default.
+        }
+        return "mp4";
     }
 
     private PlaylistDownloadResult downloadPlaylistEntriesSequential(List<PlaylistEntry> entries, String playlistUrl, DownloadOption option, File jobDir, File cookiesFile) throws Exception {
@@ -6380,13 +7193,26 @@ public final class MainActivity extends Activity {
             return new URI(
                     uri.getScheme(),
                     uri.getEncodedAuthority(),
-                    uri.getPath(),
+                    normalizeInstagramPath(uri),
                     uri.getQuery(),
                     uri.getFragment()
             ).toASCIIString();
         } catch (Exception ignored) {
             return trimmed;
         }
+    }
+
+    private String normalizeInstagramPath(Uri uri) {
+        String path = uri.getPath();
+        String host = uri.getHost();
+        if (TextUtils.isEmpty(path) || TextUtils.isEmpty(host)) {
+            return path;
+        }
+        String normalizedHost = host.toLowerCase(Locale.US);
+        if (normalizedHost.endsWith("instagram.com") && path.startsWith("/reels/")) {
+            return "/reel/" + path.substring("/reels/".length());
+        }
+        return path;
     }
 
     private String displayUrlForUi(String rawUrl) {
@@ -6743,6 +7569,9 @@ public final class MainActivity extends Activity {
             return value.replace("Playlist indiriliyor: ", "Playlist downloading: ")
                     .replace(" - video %", " - video %");
         }
+        if (value.startsWith("Instagram public medya indiriliyor... %")) {
+            return value.replace("Instagram public medya indiriliyor...", "Downloading Instagram public media...");
+        }
         if (value.startsWith("İndiriliyor %")) {
             return value.replace("İndiriliyor", "Downloading");
         }
@@ -6814,6 +7643,10 @@ public final class MainActivity extends Activity {
             case "Playlist listesi alınıyor...": return "Loading playlist list...";
             case "İndirme başlatılıyor...": return "Starting download...";
             case "Kuyruktaki indirme başlatılıyor...": return "Starting queued download...";
+            case "Instagram public medya aranıyor...": return "Looking for Instagram public media...";
+            case "Instagram public medya ses olarak hazırlanıyor...": return "Preparing Instagram public media as audio...";
+            case "Instagram public medya indiriliyor...": return "Downloading Instagram public media...";
+            case "Instagram public medya indirildi.": return "Instagram public media downloaded.";
             case "Playlist tamamlandı.": return "Playlist complete.";
             case "Playlist listesi alınamadı. Bağlantıyı kontrol edip tekrar deneyin.": return "Could not load the playlist. Check the connection and try again.";
             case "Playlist indirilemedi. Hiç dosya tamamlanmadı.": return "Playlist could not be downloaded. No file was completed.";
@@ -7600,6 +8433,30 @@ public final class MainActivity extends Activity {
             this.title = title;
             this.id = id;
             this.url = url;
+        }
+    }
+
+    private static final class InstagramPublicMedia {
+        final String videoUrl;
+        final String title;
+        final String referer;
+        final String shortcode;
+
+        InstagramPublicMedia(String videoUrl, String title, String referer, String shortcode) {
+            this.videoUrl = videoUrl;
+            this.title = title;
+            this.referer = referer;
+            this.shortcode = shortcode;
+        }
+    }
+
+    private static final class InstagramWebSession {
+        final Map<String, String> cookies;
+        final String lsd;
+
+        InstagramWebSession(Map<String, String> cookies, String lsd) {
+            this.cookies = cookies == null ? new LinkedHashMap<>() : cookies;
+            this.lsd = lsd == null ? "" : lsd;
         }
     }
 
