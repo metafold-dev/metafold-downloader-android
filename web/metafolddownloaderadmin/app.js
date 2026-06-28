@@ -43,6 +43,11 @@ const els = {
   loginPassword: $("loginPassword"),
   loginBtn: $("loginBtn"),
   authHint: $("authHint"),
+  adminNotice: $("adminNotice"),
+  adminNoticeTitle: $("adminNoticeTitle"),
+  adminNoticeText: $("adminNoticeText"),
+  adminUidText: $("adminUidText"),
+  copyUidBtn: $("copyUidBtn"),
   totalCount: $("totalCount"),
   activeCount: $("activeCount"),
   pendingCount: $("pendingCount"),
@@ -86,6 +91,7 @@ const els = {
 const state = {
   user: null,
   admin: false,
+  adminCheckPending: false,
   licenses: [],
   selectedId: "",
 };
@@ -154,12 +160,31 @@ function selectedRow() {
   return state.licenses.find((item) => item.id === state.selectedId) || null;
 }
 
+function setAdminNotice(title, text, uid) {
+  const visible = Boolean(title || text || uid);
+  els.adminNotice.classList.toggle("hidden", !visible);
+  els.adminNoticeTitle.textContent = title || "";
+  els.adminNoticeText.textContent = text || "";
+  els.adminUidText.textContent = uid || "-";
+}
+
+function renderLoginButton(signedIn) {
+  if (!signedIn) {
+    els.loginBtn.disabled = false;
+    els.loginBtn.textContent = "Giris Yap";
+    return;
+  }
+  els.loginBtn.disabled = true;
+  els.loginBtn.textContent = state.adminCheckPending ? "Yetki kontrol ediliyor..." : "Giris yapildi";
+}
+
 function renderShell() {
   const signedIn = Boolean(state.user);
   els.loginView.classList.toggle("hidden", signedIn && state.admin);
   els.adminView.classList.toggle("hidden", !signedIn || !state.admin);
   els.signOutBtn.classList.toggle("hidden", !signedIn);
   els.sessionLabel.textContent = signedIn ? state.user.email : "Giris bekleniyor";
+  renderLoginButton(signedIn);
 }
 
 async function checkAdmin(user) {
@@ -170,12 +195,17 @@ async function checkAdmin(user) {
 async function login() {
   setBusy(els.loginBtn, true, "Giris yapiliyor...");
   els.authHint.textContent = "";
+  setAdminNotice("", "", "");
   try {
     await signInWithEmailAndPassword(auth, normalizeEmail(els.loginEmail.value), els.loginPassword.value);
   } catch (error) {
     els.authHint.textContent = cleanError(error);
   } finally {
-    setBusy(els.loginBtn, false, "Giris Yap");
+    if (auth.currentUser) {
+      renderShell();
+    } else {
+      setBusy(els.loginBtn, false, "Giris Yap");
+    }
   }
 }
 
@@ -386,10 +416,30 @@ async function saveRuntime() {
 }
 
 function cleanError(error) {
+  const code = String(error?.code || "");
   const text = String(error?.message || error || "");
-  if (text.includes("permission-denied")) return "Yetki yok. Firebase admins koleksiyonuna bu hesabinin UID'sini ekle.";
-  if (text.includes("auth/invalid-credential")) return "E-posta veya sifre hatali.";
+  const haystack = `${code} ${text}`;
+  if (haystack.includes("permission-denied")) return "Yetki yok. Firebase Rules yayinlandi mi ve admins koleksiyonunda bu UID var mi kontrol et.";
+  if (haystack.includes("auth/invalid-credential")) return "E-posta veya sifre hatali.";
   return text || "Islem tamamlanamadi.";
+}
+
+async function copyText(text) {
+  const value = String(text || "").trim();
+  if (!value) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
 }
 
 els.loginBtn.addEventListener("click", login);
@@ -397,6 +447,10 @@ els.loginPassword.addEventListener("keydown", (event) => {
   if (event.key === "Enter") login();
 });
 els.signOutBtn.addEventListener("click", () => signOut(auth));
+els.copyUidBtn.addEventListener("click", async () => {
+  await copyText(state.user?.uid || els.adminUidText.textContent);
+  toast("UID kopyalandi.");
+});
 els.refreshBtn.addEventListener("click", loadLicenses);
 els.searchInput.addEventListener("input", renderLicenseList);
 els.statusFilter.addEventListener("change", renderLicenseList);
@@ -427,19 +481,38 @@ document.querySelector("[data-clear-expiry]").addEventListener("click", () => {
 onAuthStateChanged(auth, async (user) => {
   state.user = user;
   state.admin = false;
+  state.adminCheckPending = Boolean(user);
+  if (!user) setAdminNotice("", "", "");
   renderShell();
   if (!user) return;
+  setAdminNotice(
+    "Admin yetkisi kontrol ediliyor",
+    "Bu hesap icin Firestore admins kaydi okunuyor.",
+    user.uid
+  );
   try {
     state.admin = await checkAdmin(user);
+    state.adminCheckPending = false;
     renderShell();
     if (!state.admin) {
-      els.authHint.textContent = `Admin yetkisi yok. UID: ${user.uid}`;
+      els.authHint.textContent = "Giris basarili, ancak admin yetkisi yok.";
+      setAdminNotice(
+        "Admin yetkisi yok",
+        "Firestore > admins koleksiyonunda Document ID tam olarak bu UID olmali. Rules sayfasinda Publish yaptigindan da emin ol.",
+        user.uid
+      );
       toast("Admin yetkisi bulunamadi.");
       return;
     }
+    els.authHint.textContent = "";
+    setAdminNotice("", "", "");
     await Promise.all([loadLicenses(), loadRuntime()]);
   } catch (error) {
-    els.authHint.textContent = cleanError(error);
-    toast(cleanError(error));
+    state.adminCheckPending = false;
+    renderShell();
+    const message = cleanError(error);
+    els.authHint.textContent = message;
+    setAdminNotice("Admin kontrolu tamamlanamadi", message, user.uid);
+    toast(message);
   }
 });

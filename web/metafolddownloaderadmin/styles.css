@@ -71,6 +71,12 @@ button, input, select {
 
 .session {
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.session span {
+  overflow-wrap: anywhere;
 }
 
 .auth-card, .panel, .hero-panel {
@@ -132,6 +138,40 @@ input:focus, select:focus {
 .auth-card label + label,
 .auth-card label + button {
   margin-top: 14px;
+}
+
+.admin-notice {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(29, 179, 155, 0.28);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(29, 179, 155, 0.12), rgba(230, 57, 70, 0.07)),
+    #0e151a;
+}
+
+.admin-notice strong {
+  color: var(--text);
+}
+
+.admin-notice p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.admin-notice code {
+  display: block;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  color: #d7fff5;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 button {
