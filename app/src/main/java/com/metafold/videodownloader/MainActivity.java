@@ -290,6 +290,8 @@ public final class MainActivity extends Activity {
     private AlertDialog updateDownloadDialog;
     private ProgressBar updateDownloadProgress;
     private TextView updateDownloadStatus;
+    private TextView updateDownloadPercent;
+    private TextView updateDownloadBytes;
 
     private boolean downloaderReady;
     private boolean ffmpegReady;
@@ -3314,41 +3316,95 @@ public final class MainActivity extends Activity {
 
     private void showUpdateDownloadDialog(AppUpdateInfo updateInfo) {
         dismissUpdateDownloadDialog();
+        AppThemeOption theme = currentTheme();
+        String version = updateInfo == null ? "" : updateInfo.latestLabel();
+
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(4), dp(8), dp(4), 0);
+        panel.setPadding(dp(18), dp(18), dp(18), dp(18));
+        panel.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
 
-        updateDownloadStatus = textView("Güncelleme indiriliyor...", 14, Color.rgb(23, 32, 29), false);
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        panel.addView(header, matchWrap());
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.app_icon);
+        icon.setPadding(dp(4), dp(4), dp(4), dp(4));
+        icon.setBackground(rounded(softAccent(theme.accentColor), 8, theme.accentColor));
+        header.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        titleParams.leftMargin = dp(12);
+        header.addView(titleBlock, titleParams);
+
+        TextView title = textView("Güncelleme indiriliyor", 19, theme.textColor, true);
+        titleBlock.addView(title);
+
+        TextView subtitle = textView(TextUtils.isEmpty(version) ? "APK hazırlanıyor" : ui("Yeni sürüm") + ": " + version, 12, theme.mutedColor, false);
+        subtitle.setPadding(0, dp(3), 0, 0);
+        titleBlock.addView(subtitle);
+
+        updateDownloadPercent = textView("%0", 16, readableOn(theme.accentColor), true);
+        updateDownloadPercent.setGravity(Gravity.CENTER);
+        updateDownloadPercent.setBackground(rounded(theme.accentColor, 18, theme.accentColor));
+        header.addView(updateDownloadPercent, new LinearLayout.LayoutParams(dp(58), dp(36)));
+
+        updateDownloadStatus = textView("Bağlantı kuruluyor...", 14, theme.textColor, true);
+        updateDownloadStatus.setPadding(0, dp(18), 0, 0);
         panel.addView(updateDownloadStatus, matchWrap());
+
+        updateDownloadBytes = textView("Dosya boyutu hesaplanıyor", 12, theme.mutedColor, false);
+        updateDownloadBytes.setPadding(0, dp(4), 0, 0);
+        panel.addView(updateDownloadBytes, matchWrap());
 
         updateDownloadProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         updateDownloadProgress.setMax(100);
         updateDownloadProgress.setProgress(0);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            updateDownloadProgress.setProgressTintList(ColorStateList.valueOf(theme.accentColor));
+            updateDownloadProgress.setIndeterminateTintList(ColorStateList.valueOf(theme.accentColor));
+            updateDownloadProgress.setProgressBackgroundTintList(ColorStateList.valueOf(theme.borderColor));
+        }
         LinearLayout.LayoutParams progressParams = matchWrap();
-        progressParams.topMargin = dp(12);
+        progressParams.topMargin = dp(14);
         panel.addView(updateDownloadProgress, progressParams);
 
-        String version = updateInfo == null ? "" : updateInfo.latestLabel();
         updateDownloadDialog = new AlertDialog.Builder(this)
-                .setTitle(ui("Güncelleme indiriliyor"))
-                .setMessage(TextUtils.isEmpty(version) ? null : ui("Yeni sürüm") + ": " + version)
                 .setView(panel)
                 .create();
         updateDownloadDialog.setCancelable(false);
         updateDownloadDialog.setCanceledOnTouchOutside(false);
         updateDownloadDialog.show();
+        Window window = updateDownloadDialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            WindowManager.LayoutParams params = window.getAttributes();
+            params.dimAmount = 0.68f;
+            window.setAttributes(params);
+        }
     }
 
     private void updateUpdateDownloadProgress(int percent, long downloaded, long total) {
+        int safePercent = Math.max(0, Math.min(100, percent));
         if (updateDownloadProgress != null) {
             updateDownloadProgress.setIndeterminate(total <= 0L);
-            updateDownloadProgress.setProgress(Math.max(0, Math.min(100, percent)));
+            updateDownloadProgress.setProgress(safePercent);
+        }
+        if (updateDownloadPercent != null) {
+            updateDownloadPercent.setText("%" + safePercent);
         }
         if (updateDownloadStatus != null) {
+            updateDownloadStatus.setText(safePercent >= 100 ? ui("Güncelleme hazırlandı") : ui("Güncelleme indiriliyor..."));
+        }
+        if (updateDownloadBytes != null) {
             String sizeText = total > 0L
                     ? formatBytes(downloaded) + " / " + formatBytes(total)
                     : formatBytes(downloaded);
-            updateDownloadStatus.setText(ui("Güncelleme indiriliyor...") + " %" + Math.max(0, Math.min(100, percent)) + "\n" + sizeText);
+            updateDownloadBytes.setText(sizeText);
         }
     }
 
@@ -3359,6 +3415,8 @@ public final class MainActivity extends Activity {
         updateDownloadDialog = null;
         updateDownloadProgress = null;
         updateDownloadStatus = null;
+        updateDownloadPercent = null;
+        updateDownloadBytes = null;
     }
 
     private void snoozeAppUpdate(AppUpdateInfo updateInfo) {
@@ -6836,6 +6894,10 @@ public final class MainActivity extends Activity {
             case "İndir ve kur": return "Download and install";
             case "Güncelleme indiriliyor": return "Downloading update";
             case "Güncelleme indiriliyor...": return "Downloading update...";
+            case "APK hazırlanıyor": return "Preparing APK";
+            case "Bağlantı kuruluyor...": return "Connecting...";
+            case "Dosya boyutu hesaplanıyor": return "Calculating file size";
+            case "Güncelleme hazırlandı": return "Update is ready";
             case "Güncelleme indirildi. Kurulum ekranı açılıyor...": return "Update downloaded. Opening installer...";
             case "Güncelleme indirilemedi.": return "Update could not be downloaded.";
             case "Güncelleme indirilemedi": return "Update could not be downloaded";

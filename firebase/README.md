@@ -93,7 +93,7 @@ email: kullanici@example.com
 deviceId: android-device-id
 deviceLabel: Samsung SM-...
 packageName: com.metafold.videodownloader
-appVersion: 3.28
+appVersion: 3.29
 status: pending | active | inactive
 requestId: REQ-...
 owner: Ahmet Dogan
