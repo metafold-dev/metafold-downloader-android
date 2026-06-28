@@ -83,3 +83,9 @@ Kayit dokumani ornegi:
 ## Uzaktan indirme kapisi
 
 Uygulama, lisans dogrulamadan sonra Firestore `app_config/runtime` dokumanini okuyarak eski veya iptal edilmis indirme protokollerini kapatabilir. Video ve APK dosyalari Firebase'den indirilmez; Firebase sadece kucuk lisans ve runtime config dokumanlarini okur.
+
+## Web admin paneli
+
+`web/metafolddownloaderadmin` klasoru `metafold.net/metafolddownloaderadmin/` icin statik lisans panelidir. Panel lisanslari listeleyebilir, aktif/pasif yapabilir, sure atayabilir, cihaz kilidini sifirlayabilir ve `app_config/runtime` ayarini duzenleyebilir.
+
+Panelin yazma yetkisi icin Firebase Auth admin hesabinin UID degeri Firestore'da `admins/{uid}` dokumani olarak eklenmelidir. Guncel Firestore rules icindeki `isAdmin()` kontrolu bu dokumani kullanir.

@@ -37,6 +37,22 @@ firebase deploy --only firestore
 
 Firebase CLI kullanmak istemezseniz `firestore.rules` icindeki kurallari Firebase Console > Firestore > Rules alanina yapistirip Publish edebilirsiniz.
 
+## Web admin paneli
+
+`web/metafolddownloaderadmin` klasoru `metafold.net/metafolddownloaderadmin/` icin statik lisans panelidir. Panelin lisanslari okuyup yazabilmesi icin admin kullanicisinin Firebase Auth UID degeri Firestore'da `admins/{uid}` dokumani olarak eklenmelidir.
+
+Ornek:
+
+```text
+collection: admins
+document: Firebase Auth UID
+
+email: admin@example.com
+role: owner
+```
+
+Bu dokuman sadece yetki kontrolu icindir. Kullanici uygulama icinden kendini admin yapamaz.
+
 ## Android API Key
 
 Uygulamanin Firestore REST API'ye baglanmasi icin Firebase Web API Key gerekir.
