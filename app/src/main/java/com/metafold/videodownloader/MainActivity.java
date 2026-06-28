@@ -4098,11 +4098,17 @@ public final class MainActivity extends Activity {
         }
         String owner = firestoreString(fields, "owner");
         String expiresAt = firestoreStringOrTimestamp(fields, "expiresAt");
-        if (active && isLicenseExpired(expiresAt)) {
+        boolean expiryInvalid = isLicenseExpiryInvalid(expiresAt);
+        boolean expired = isLicenseExpired(expiresAt);
+        if (active && (expired || expiryInvalid)) {
             active = false;
             status = LICENSE_STATUS_INACTIVE;
         }
-        String message = active ? "Lisans etkin" : (isLicenseExpired(expiresAt) ? "Lisans süresi doldu" : ("inactive".equals(status) ? "Lisans pasif" : "Onay bekleniyor"));
+        String message = active
+                ? "Lisans etkin"
+                : (expiryInvalid
+                ? "Lisans bitiş tarihi geçersiz"
+                : (expired ? "Lisans süresi doldu" : ("inactive".equals(status) ? "Lisans pasif" : "Onay bekleniyor")));
         String licenseKey = normalizeLicenseKey(firestoreString(fields, "licenseKey"));
         String email = normalizeEmail(firstNonEmpty(firestoreString(fields, "email"), fallbackEmail));
         String requestId = firstNonEmpty(firestoreString(fields, "requestId"), requestIdForDocument(docId));
@@ -4232,6 +4238,9 @@ public final class MainActivity extends Activity {
     private String licenseStatusText() {
         String status = getString(PREF_LICENSE_STATUS, "");
         String expiresAt = getString(PREF_LICENSE_EXPIRES_AT, "");
+        if (LICENSE_STATUS_ACTIVE.equals(status) && isLicenseExpiryInvalid(expiresAt)) {
+            return "Lisans bitiş tarihi geçersiz - " + expiresAt;
+        }
         if (LICENSE_STATUS_ACTIVE.equals(status) && isLicenseExpired(expiresAt)) {
             return TextUtils.isEmpty(expiresAt) ? "Lisans süresi doldu" : "Lisans süresi doldu - " + expiresAt;
         }
@@ -4265,6 +4274,9 @@ public final class MainActivity extends Activity {
         String expiresAt = getString(PREF_LICENSE_EXPIRES_AT, "");
         if (TextUtils.isEmpty(expiresAt)) {
             return "Süresiz";
+        }
+        if (isLicenseExpiryInvalid(expiresAt)) {
+            return "Geçersiz tarih - " + expiresAt;
         }
         return isLicenseExpired(expiresAt) ? "Süresi doldu - " + expiresAt : "Geçerli - " + expiresAt;
     }
@@ -4554,25 +4566,38 @@ public final class MainActivity extends Activity {
         if (TextUtils.isEmpty(value)) {
             return 0L;
         }
-        long timestamp = parseFirestoreTimestamp(value);
+        String normalized = value.trim();
+        long timestamp = parseFirestoreTimestamp(normalized);
         if (timestamp > 0L) {
             return timestamp;
         }
-        try {
-            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
-            Date date = format.parse(value.trim());
-            if (date != null) {
-                return date.getTime() + (24L * 60L * 60L * 1000L) - 1L;
+        String[] datePatterns = new String[]{
+                "yyyy-MM-dd",
+                "yyyy.MM.dd",
+                "yyyy/MM/dd"
+        };
+        for (String pattern : datePatterns) {
+            try {
+                SimpleDateFormat format = new SimpleDateFormat(pattern, Locale.US);
+                format.setLenient(false);
+                Date date = format.parse(normalized);
+                if (date != null) {
+                    return date.getTime() + (24L * 60L * 60L * 1000L) - 1L;
+                }
+            } catch (Exception ignored) {
+                // Try the next supported date format.
             }
-        } catch (Exception ignored) {
-            // Unknown date format means no local expiry enforcement.
         }
-        return 0L;
+        return -1L;
+    }
+
+    private static boolean isLicenseExpiryInvalid(String expiresAt) {
+        return !TextUtils.isEmpty(expiresAt) && licenseExpiryMillis(expiresAt) < 0L;
     }
 
     private static boolean isLicenseExpired(String expiresAt) {
         long expiry = licenseExpiryMillis(expiresAt);
-        return expiry > 0L && System.currentTimeMillis() > expiry;
+        return expiry < 0L || (expiry > 0L && System.currentTimeMillis() > expiry);
     }
 
     private String formatDateTime(long millis) {
@@ -4639,7 +4664,7 @@ public final class MainActivity extends Activity {
                     if (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE) {
                         renderLicenseSettings(settingsPanel);
                     }
-                    if (result.active && !isLicenseExpired(result.expiresAt)) {
+                    if (result.active && !isLicenseExpiryInvalid(result.expiresAt) && !isLicenseExpired(result.expiresAt)) {
                         approvedAction.run();
                     } else {
                         setStatus(result.message, false);
@@ -7621,6 +7646,12 @@ public final class MainActivity extends Activity {
             return value.replace("Bu lisans başka bir cihaza bağlı. Cihaz değişimi ", "This license is bound to another device. Device change is available after ")
                     .replace(" sonrasında yapılabilir.", ".");
         }
+        if (value.startsWith("Lisans bitiş tarihi geçersiz - ")) {
+            return value.replace("Lisans bitiş tarihi geçersiz - ", "Invalid license expiry date - ");
+        }
+        if (value.startsWith("Geçersiz tarih - ")) {
+            return value.replace("Geçersiz tarih - ", "Invalid date - ");
+        }
         return uiStatic(value);
     }
 
@@ -7929,6 +7960,7 @@ public final class MainActivity extends Activity {
             case "Lisans etkin": return "License active";
             case "Lisans doğrulanamadı": return "License could not be verified";
             case "Lisans pasif": return "License inactive";
+            case "Lisans bitiş tarihi geçersiz": return "Invalid license expiry date";
             case "Firebase ayarı eksik": return "Firebase setting missing";
             case "Spark plan lisans sistemi için Firebase Web API Key uygulamaya eklenmeli.": return "Add the Firebase Web API Key to the app for the Spark plan license system.";
             case "Etkin": return "Active";

@@ -66,7 +66,7 @@ private static final String FIREBASE_WEB_API_KEY = "BURAYA_WEB_API_KEY";
 
 ## Sureli lisans
 
-`expiresAt` alani lisansin bitis tarihidir. Bos birakilirsa lisans suresiz kabul edilir. Tarihi string olarak `yyyy-MM-dd` biciminde girin; uygulama o gunun sonunda lisansi bitmis sayar.
+`expiresAt` alani lisansin bitis tarihidir. Bos birakilirsa lisans suresiz kabul edilir. Tarihi string olarak tercihen `yyyy-MM-dd` biciminde girin; uygulama o gunun sonunda lisansi bitmis sayar. Uygulama `yyyy.MM.dd` ve `yyyy/MM/dd` bicimlerini de kabul eder. Dolu ama okunamayan tarih lisansi gecersiz sayar.
 
 2026-06-27 tarihinden baslayan ornekler:
 
@@ -93,7 +93,7 @@ email: kullanici@example.com
 deviceId: android-device-id
 deviceLabel: Samsung SM-...
 packageName: com.metafold.videodownloader
-appVersion: 3.31
+appVersion: 3.32
 status: pending | active | inactive
 requestId: REQ-...
 owner: Ahmet Dogan
