@@ -3001,7 +3001,7 @@ public final class MainActivity extends Activity {
                 .setMessage(ui("Kurulu sürüm") + ": " + updateInfo.currentVersion + "\n" +
                         ui("Yeni sürüm") + ": " + updateInfo.latestLabel() + "\n\n" +
                         ui("Güncelleme GitHub Releases üzerinden alınacak."))
-                .setPositiveButton(ui("�?imdi yükle"), (dialog, which) -> openUpdateTarget(updateInfo))
+                .setPositiveButton(ui("Güncelle"), (dialog, which) -> openUpdateTarget(updateInfo))
                 .setNegativeButton(ui("Daha sonra hatırlat"), (dialog, which) -> snoozeAppUpdate(updateInfo));
         if (!TextUtils.isEmpty(updateInfo.apkUrl)) {
             builder.setNeutralButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl));
@@ -6350,7 +6350,7 @@ public final class MainActivity extends Activity {
             case "Release sayfasını aç": return "Open release page";
             case "APK'yı aç": return "Open APK";
             case "Güncelleme bulundu": return "Update found";
-            case "�?imdi yükle": return "Install now";
+            case "Güncelle": return "Update";
             case "Daha sonra hatırlat": return "Remind me later";
             case "Daha sonra hatırlatılacak": return "You will be reminded later";
             case "Tamam": return "OK";
@@ -6361,31 +6361,31 @@ public final class MainActivity extends Activity {
             case "Hesabınızı oluşturun": return "Create your account";
             case "MetaFold Downloader kullanmak için e-posta hesabınızla devam edin.": return "Continue with your email account to use MetaFold Downloader.";
             case "E-posta": return "Email";
-            case "�?ifre": return "Password";
-            case "�?ifre tekrar": return "Repeat password";
+            case "Şifre": return "Password";
+            case "Şifre tekrar": return "Repeat password";
             case "Hesabınız yok mu? Kayıt ol": return "No account? Register";
             case "Zaten hesabınız var mı? Giriş yap": return "Already have an account? Sign in";
-            case "�?ifremi unuttum": return "Forgot password";
+            case "Şifremi unuttum": return "Forgot password";
             case "Kayıt isteği oluştuktan sonra kullanım için yönetici onayı gerekir.": return "After registration, admin approval is required before use.";
-            case "�?ifre en az 6 karakter olmalı": return "Password must be at least 6 characters";
-            case "�?ifreler eşleşmiyor": return "Passwords do not match";
+            case "Şifre en az 6 karakter olmalı": return "Password must be at least 6 characters";
+            case "Şifreler eşleşmiyor": return "Passwords do not match";
             case "Kayıt oluşturuluyor...": return "Creating account...";
             case "Giriş yapılıyor...": return "Signing in...";
             case "Hesabınız onaylı. Uygulamayı kullanabilirsiniz.": return "Your account is approved. You can use the app.";
             case "Kayıt isteğiniz alındı. Yönetici onayından sonra indirme özellikleri açılır.": return "Your registration request was received. Download features unlock after admin approval.";
             case "Kayıt başarısız": return "Registration failed";
             case "Giriş başarısız": return "Sign in failed";
-            case "�?ifre sıfırlama e-postası gönderiliyor...": return "Sending password reset email...";
-            case "�?ifre sıfırlama": return "Password reset";
-            case "�?ifre sıfırlama bağlantısı e-posta adresinize gönderildi.": return "A password reset link was sent to your email address.";
-            case "�?ifre sıfırlama başarısız": return "Password reset failed";
+            case "Şifre sıfırlama e-postası gönderiliyor...": return "Sending password reset email...";
+            case "Şifre sıfırlama": return "Password reset";
+            case "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.": return "A password reset link was sent to your email address.";
+            case "Şifre sıfırlama başarısız": return "Password reset failed";
             case "Giriş gerekli": return "Sign in required";
             case "Devam etmek için kayıt olun veya giriş yapın.": return "Register or sign in to continue.";
             case "Çıkış yapıldı": return "Signed out";
             case "Bu e-posta zaten kayıtlı. Giriş yapın.": return "This email is already registered. Sign in.";
             case "Bu e-posta ile hesap bulunamadı.": return "No account was found for this email.";
             case "E-posta veya şifre hatalı.": return "Email or password is incorrect.";
-            case "�?ifre en az 6 karakter olmalı.": return "Password must be at least 6 characters.";
+            case "Şifre en az 6 karakter olmalı.": return "Password must be at least 6 characters.";
             case "Bu kullanıcı hesabı devre dışı.": return "This user account is disabled.";
             case "Çok fazla deneme yapıldı. Biraz sonra tekrar deneyin.": return "Too many attempts. Try again later.";
             case "Firebase Authentication içinde Email/Password girişi etkinleştirilmeli.": return "Email/Password sign-in must be enabled in Firebase Authentication.";
