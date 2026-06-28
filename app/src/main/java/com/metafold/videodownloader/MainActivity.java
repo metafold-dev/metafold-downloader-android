@@ -179,6 +179,7 @@ public final class MainActivity extends Activity {
     private static final String PREF_AUTH_ID_TOKEN = "auth_id_token";
     private static final String PREF_AUTH_REFRESH_TOKEN = "auth_refresh_token";
     private static final String PREF_AUTH_LOCAL_ID = "auth_local_id";
+    private static final String PREF_AUTH_TOKEN_EXPIRES_AT = "auth_token_expires_at";
     private static final String PREF_PLAYER_NOTIFICATION = "player_notification";
     private static final String PREF_NEW_FEED_NOTIFICATIONS = "new_feed_notifications";
     private static final String PREF_NOTIFICATION_CHECK_FREQUENCY = "notification_check_frequency";
@@ -199,6 +200,7 @@ public final class MainActivity extends Activity {
     private static final String FIREBASE_PROJECT_ID = "metafold-downloader";
     private static final String FIREBASE_WEB_API_KEY = "AIzaSyDp9eEdjo-pPS76MVTR8O-cmlWtYycXSy0";
     private static final String FIREBASE_AUTH_BASE_URL = "https://identitytoolkit.googleapis.com/v1/";
+    private static final String FIREBASE_TOKEN_REFRESH_URL = "https://securetoken.googleapis.com/v1/token";
     private static final String FIRESTORE_LICENSE_COLLECTION = "license_requests";
     private static final String LICENSE_STATUS_ACTIVE = "active";
     private static final String LICENSE_STATUS_PENDING = "pending";
@@ -3572,8 +3574,55 @@ public final class MainActivity extends Activity {
                 normalizeEmail(response.optString("email", email)),
                 response.optString("idToken", ""),
                 response.optString("refreshToken", ""),
-                response.optString("localId", "")
+                response.optString("localId", ""),
+                firebaseTokenExpiresAt(response, "expiresIn")
         );
+    }
+
+    private AuthSession requestFirebaseTokenRefresh(String refreshToken, String fallbackEmail) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(FIREBASE_TOKEN_REFRESH_URL + "?key=" + FIREBASE_WEB_API_KEY).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(12000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=utf-8");
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("User-Agent", "MetaFoldDownloader/" + currentAppVersion());
+
+        String form = "grant_type=refresh_token&refresh_token="
+                + URLEncoder.encode(refreshToken, StandardCharsets.UTF_8.name());
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(form.getBytes(StandardCharsets.UTF_8));
+        }
+
+        int code = connection.getResponseCode();
+        String response = readHttpBody(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        if (code < 200 || code >= 300) {
+            throw new IOException(firebaseAuthErrorMessage(response));
+        }
+
+        JSONObject json = TextUtils.isEmpty(response) ? new JSONObject() : new JSONObject(response);
+        return new AuthSession(
+                normalizeEmail(fallbackEmail),
+                json.optString("id_token", ""),
+                json.optString("refresh_token", refreshToken),
+                json.optString("user_id", getString(PREF_AUTH_LOCAL_ID, "")),
+                firebaseTokenExpiresAt(json, "expires_in")
+        );
+    }
+
+    private static long firebaseTokenExpiresAt(JSONObject response, String fieldName) {
+        long seconds = 3600L;
+        try {
+            String raw = response.optString(fieldName, "3600");
+            if (!TextUtils.isEmpty(raw)) {
+                seconds = Long.parseLong(raw);
+            }
+        } catch (Exception ignored) {
+            seconds = 3600L;
+        }
+        seconds = Math.max(60L, seconds);
+        return System.currentTimeMillis() + (seconds * 1000L);
     }
 
     private void requestFirebasePasswordReset(String email) throws Exception {
@@ -3633,6 +3682,12 @@ public final class MainActivity extends Activity {
         if (message.contains("USER_DISABLED")) {
             return "Bu kullan\u0131c\u0131 hesab\u0131 devre d\u0131\u015f\u0131.";
         }
+        if (message.contains("TOKEN_EXPIRED")
+                || message.contains("INVALID_REFRESH_TOKEN")
+                || message.contains("USER_NOT_FOUND")
+                || message.contains("INVALID_ID_TOKEN")) {
+            return firebaseSessionExpiredMessage();
+        }
         if (message.contains("TOO_MANY_ATTEMPTS_TRY_LATER")) {
             return "\u00c7ok fazla deneme yap\u0131ld\u0131. Biraz sonra tekrar deneyin.";
         }
@@ -3652,6 +3707,7 @@ public final class MainActivity extends Activity {
                 .putString(PREF_AUTH_ID_TOKEN, session.idToken)
                 .putString(PREF_AUTH_REFRESH_TOKEN, session.refreshToken)
                 .putString(PREF_AUTH_LOCAL_ID, session.localId)
+                .putLong(PREF_AUTH_TOKEN_EXPIRES_AT, session.expiresAt)
                 .putString(PREF_LICENSE_EMAIL, session.email)
                 .commit();
     }
@@ -3663,6 +3719,7 @@ public final class MainActivity extends Activity {
                 .remove(PREF_AUTH_ID_TOKEN)
                 .remove(PREF_AUTH_REFRESH_TOKEN)
                 .remove(PREF_AUTH_LOCAL_ID)
+                .remove(PREF_AUTH_TOKEN_EXPIRES_AT)
                 .remove(PREF_LICENSE_KEY)
                 .remove(PREF_LICENSE_EMAIL)
                 .remove(PREF_LICENSE_REQUEST_ID)
@@ -3914,6 +3971,9 @@ public final class MainActivity extends Activity {
         if (response.code == HttpURLConnection.HTTP_CONFLICT || response.code == 409) {
             return requestLicenseValidation("", email);
         }
+        if (response.code == HttpURLConnection.HTTP_UNAUTHORIZED || response.code == 401) {
+            throw new IOException(firebaseSessionExpiredMessage());
+        }
         if (response.code == HttpURLConnection.HTTP_FORBIDDEN || response.code == 403) {
             throw new IOException(firestorePermissionMessage());
         }
@@ -3928,6 +3988,9 @@ public final class MainActivity extends Activity {
         FirestoreResponse response = firestoreGet(firestoreDocumentUrl(docId));
         if (response.code == HttpURLConnection.HTTP_NOT_FOUND || response.code == 404) {
             return new LicenseResult(false, LICENSE_STATUS_PENDING, "Onay bekleniyor", "", "", "", email, requestIdForDocument(docId), "", "", 0L);
+        }
+        if (response.code == HttpURLConnection.HTTP_UNAUTHORIZED || response.code == 401) {
+            throw new IOException(firebaseSessionExpiredMessage());
         }
         if (response.code == HttpURLConnection.HTTP_FORBIDDEN || response.code == 403) {
             throw new IOException(firestorePermissionMessage());
@@ -4005,6 +4068,12 @@ public final class MainActivity extends Activity {
                 "lastDeviceChangeAt",
                 "nextDeviceChangeAt"
         );
+        if (response.code == HttpURLConnection.HTTP_UNAUTHORIZED || response.code == 401) {
+            throw new IOException(firebaseSessionExpiredMessage());
+        }
+        if (response.code == HttpURLConnection.HTTP_FORBIDDEN || response.code == 403) {
+            throw new IOException(firestorePermissionMessage());
+        }
         if (response.code < 200 || response.code >= 300) {
             return new LicenseResult(
                     false,
@@ -4195,6 +4264,32 @@ public final class MainActivity extends Activity {
         return "Firestore izinleri kayıt isteğini reddetti. Firebase Console > Firestore > Rules ekranında uygulamanın güncel firestore.rules içeriğini Publish edin.";
     }
 
+    private static String firebaseSessionExpiredMessage() {
+        return "Oturum süresi doldu. Lütfen çıkış yapıp tekrar giriş yapın.";
+    }
+
+    private synchronized void ensureFreshFirebaseAuthToken(boolean forceRefresh) throws IOException {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String token = prefs.getString(PREF_AUTH_ID_TOKEN, "");
+        long expiresAt = prefs.getLong(PREF_AUTH_TOKEN_EXPIRES_AT, 0L);
+        long refreshBefore = System.currentTimeMillis() + (2L * 60L * 1000L);
+        if (!forceRefresh && !TextUtils.isEmpty(token) && expiresAt > refreshBefore) {
+            return;
+        }
+
+        String refreshToken = prefs.getString(PREF_AUTH_REFRESH_TOKEN, "");
+        if (TextUtils.isEmpty(refreshToken)) {
+            throw new IOException(firebaseSessionExpiredMessage());
+        }
+
+        try {
+            AuthSession session = requestFirebaseTokenRefresh(refreshToken, prefs.getString(PREF_AUTH_EMAIL, ""));
+            saveAuthSession(session);
+        } catch (Exception error) {
+            throw new IOException(firebaseSessionExpiredMessage(), error);
+        }
+    }
+
     private void setFirebaseAuthHeader(HttpURLConnection connection) {
         String token = getString(PREF_AUTH_ID_TOKEN, "");
         if (!TextUtils.isEmpty(token)) {
@@ -4203,6 +4298,16 @@ public final class MainActivity extends Activity {
     }
 
     private FirestoreResponse firestoreGet(String url) throws IOException {
+        ensureFreshFirebaseAuthToken(false);
+        FirestoreResponse response = firestoreGetOnce(url);
+        if (response.code == HttpURLConnection.HTTP_UNAUTHORIZED || response.code == 401) {
+            ensureFreshFirebaseAuthToken(true);
+            response = firestoreGetOnce(url);
+        }
+        return response;
+    }
+
+    private FirestoreResponse firestoreGetOnce(String url) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setConnectTimeout(12000);
         connection.setReadTimeout(12000);
@@ -4215,6 +4320,16 @@ public final class MainActivity extends Activity {
     }
 
     private FirestoreResponse firestorePost(String url, JSONObject body) throws IOException {
+        ensureFreshFirebaseAuthToken(false);
+        FirestoreResponse response = firestorePostOnce(url, body);
+        if (response.code == HttpURLConnection.HTTP_UNAUTHORIZED || response.code == 401) {
+            ensureFreshFirebaseAuthToken(true);
+            response = firestorePostOnce(url, body);
+        }
+        return response;
+    }
+
+    private FirestoreResponse firestorePostOnce(String url, JSONObject body) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setConnectTimeout(12000);
         connection.setReadTimeout(12000);
@@ -4233,6 +4348,16 @@ public final class MainActivity extends Activity {
     }
 
     private FirestoreResponse firestorePatch(String url, JSONObject body, String... updateMaskFields) throws IOException {
+        ensureFreshFirebaseAuthToken(false);
+        FirestoreResponse response = firestorePatchOnce(url, body, updateMaskFields);
+        if (response.code == HttpURLConnection.HTTP_UNAUTHORIZED || response.code == 401) {
+            ensureFreshFirebaseAuthToken(true);
+            response = firestorePatchOnce(url, body, updateMaskFields);
+        }
+        return response;
+    }
+
+    private FirestoreResponse firestorePatchOnce(String url, JSONObject body, String... updateMaskFields) throws IOException {
         StringBuilder patchedUrl = new StringBuilder(url);
         for (String field : updateMaskFields) {
             patchedUrl.append("&updateMask.fieldPaths=").append(field);
@@ -6803,6 +6928,7 @@ public final class MainActivity extends Activity {
             case "Firestore izinleri kayıt isteğini reddetti. Firebase Console > Firestore > Rules ekranında uygulamanın güncel firestore.rules içeriğini Publish edin.": return "Firestore permissions rejected the registration request. Publish the app's latest firestore.rules content from Firebase Console > Firestore > Rules.";
             case "Firebase Web API Key geçersiz veya bu proje için değil.": return "The Firebase Web API Key is invalid or belongs to another project.";
             case "Firebase oturum hatası.": return "Firebase sign-in error.";
+            case "Oturum süresi doldu. Lütfen çıkış yapıp tekrar giriş yapın.": return "Session expired. Please sign out and sign in again.";
             case "Oturum": return "Session";
             case "Giriş yapılmadı": return "Not signed in";
             case "Lisans kontrol ediliyor...": return "Checking license...";
@@ -7562,12 +7688,14 @@ public final class MainActivity extends Activity {
         final String idToken;
         final String refreshToken;
         final String localId;
+        final long expiresAt;
 
-        AuthSession(String email, String idToken, String refreshToken, String localId) {
+        AuthSession(String email, String idToken, String refreshToken, String localId, long expiresAt) {
             this.email = email;
             this.idToken = idToken;
             this.refreshToken = refreshToken;
             this.localId = localId;
+            this.expiresAt = expiresAt;
         }
     }
 
