@@ -1,0 +1,5 @@
+-keep class com.yausername.youtubedl_android.** { *; }
+-keep class com.yausername.youtubedl_android.mapper.** { *; }
+-keep class kotlin.Metadata { *; }
+-dontwarn kotlin.**
+-dontwarn org.jetbrains.annotations.**

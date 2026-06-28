@@ -172,6 +172,12 @@ public final class MainActivity extends Activity {
     private static final String PREF_MANDATORY_UPDATE_HTML_URL = "mandatory_update_html_url";
     private static final String PREF_MANDATORY_UPDATE_APK_URL = "mandatory_update_apk_url";
     private static final String PREF_MANDATORY_UPDATE_RELEASE_NAME = "mandatory_update_release_name";
+    private static final String PREF_RUNTIME_GATE_LAST_CHECK = "runtime_gate_last_check";
+    private static final String PREF_RUNTIME_GATE_ALLOWED = "runtime_gate_allowed";
+    private static final String PREF_RUNTIME_GATE_DOWNLOADS_ENABLED = "runtime_gate_downloads_enabled";
+    private static final String PREF_RUNTIME_GATE_MIN_VERSION_CODE = "runtime_gate_min_version_code";
+    private static final String PREF_RUNTIME_GATE_MIN_DOWNLOAD_PROTOCOL = "runtime_gate_min_download_protocol";
+    private static final String PREF_RUNTIME_GATE_MESSAGE = "runtime_gate_message";
     private static final String PREF_HIDDEN_DOWNLOAD_KEYS = "hidden_download_keys";
     private static final String PREF_LICENSE_KEY = "license_key";
     private static final String PREF_LICENSE_EMAIL = "license_email";
@@ -210,12 +216,16 @@ public final class MainActivity extends Activity {
     private static final String FIREBASE_AUTH_BASE_URL = "https://identitytoolkit.googleapis.com/v1/";
     private static final String FIREBASE_TOKEN_REFRESH_URL = "https://securetoken.googleapis.com/v1/token";
     private static final String FIRESTORE_LICENSE_COLLECTION = "license_requests";
+    private static final String FIRESTORE_CONFIG_COLLECTION = "app_config";
+    private static final String FIRESTORE_RUNTIME_CONFIG_DOCUMENT = "runtime";
     private static final String LICENSE_STATUS_ACTIVE = "active";
     private static final String LICENSE_STATUS_PENDING = "pending";
     private static final String LICENSE_STATUS_INACTIVE = "inactive";
     private static final String LICENSE_STATUS_DEVICE_LOCKED = "device_locked";
+    private static final int DOWNLOAD_PROTOCOL_VERSION = 2;
     private static final long DEVICE_CHANGE_COOLDOWN_MS = 7L * 24L * 60L * 60L * 1000L;
     private static final long LICENSE_REFRESH_INTERVAL_MS = 15L * 60L * 1000L;
+    private static final long RUNTIME_GATE_REFRESH_INTERVAL_MS = 5L * 60L * 1000L;
     private static final long BACK_EXIT_WINDOW_MS = 1800L;
     private static final long UPDATE_INTERVAL_MS = 12L * 60L * 60L * 1000L;
     private static final Pattern URL_PATTERN = Pattern.compile(
@@ -3520,6 +3530,17 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private int currentAppVersionCode() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                return (int) getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
+            }
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
     private static String normalizeVersionTag(String value) {
         if (value == null) {
             return "";
@@ -4353,10 +4374,20 @@ public final class MainActivity extends Activity {
     }
 
     private String firestoreBaseUrl() {
+        return firestoreCollectionBaseUrl(FIRESTORE_LICENSE_COLLECTION);
+    }
+
+    private String firestoreRuntimeConfigDocumentUrl() {
+        return firestoreCollectionBaseUrl(FIRESTORE_CONFIG_COLLECTION)
+                + "/" + FIRESTORE_RUNTIME_CONFIG_DOCUMENT
+                + "?key=" + FIREBASE_WEB_API_KEY;
+    }
+
+    private String firestoreCollectionBaseUrl(String collection) {
         return "https://firestore.googleapis.com/v1/projects/"
                 + FIREBASE_PROJECT_ID
                 + "/databases/(default)/documents/"
-                + FIRESTORE_LICENSE_COLLECTION;
+                + collection;
     }
 
     private String firestorePermissionMessage() {
@@ -4517,6 +4548,43 @@ public final class MainActivity extends Activity {
         return value.optString("timestampValue", "");
     }
 
+    private static boolean firestoreBoolean(JSONObject fields, String key, boolean fallback) {
+        if (fields == null || TextUtils.isEmpty(key)) {
+            return fallback;
+        }
+        JSONObject value = fields.optJSONObject(key);
+        if (value == null) {
+            return fallback;
+        }
+        if (value.has("booleanValue")) {
+            return value.optBoolean("booleanValue", fallback);
+        }
+        String stringValue = value.optString("stringValue", "");
+        if ("true".equalsIgnoreCase(stringValue) || "1".equals(stringValue)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(stringValue) || "0".equals(stringValue)) {
+            return false;
+        }
+        return fallback;
+    }
+
+    private static int firestoreInteger(JSONObject fields, String key, int fallback) {
+        if (fields == null || TextUtils.isEmpty(key)) {
+            return fallback;
+        }
+        JSONObject value = fields.optJSONObject(key);
+        if (value == null) {
+            return fallback;
+        }
+        String raw = firstNonEmpty(
+                value.optString("integerValue", ""),
+                value.optString("doubleValue", ""),
+                value.optString("stringValue", "")
+        );
+        return parsePositiveInt(raw, fallback);
+    }
+
     private static long firestoreTimestampMillis(JSONObject fields, String key) {
         if (fields == null || TextUtils.isEmpty(key)) {
             return 0L;
@@ -4600,6 +4668,90 @@ public final class MainActivity extends Activity {
         return expiry < 0L || (expiry > 0L && System.currentTimeMillis() > expiry);
     }
 
+    private RuntimeGateResult requestRuntimeGate(boolean forceRefresh) throws Exception {
+        RuntimeGateResult cached = runtimeGateFromPrefs();
+        if (!forceRefresh && cached.fresh) {
+            return cached;
+        }
+
+        FirestoreResponse response = firestoreGet(firestoreRuntimeConfigDocumentUrl());
+        if (response.code == HttpURLConnection.HTTP_NOT_FOUND || response.code == 404) {
+            RuntimeGateResult allow = RuntimeGateResult.allowed("Remote runtime config not created yet.");
+            cacheRuntimeGate(allow);
+            return allow;
+        }
+        if (response.code == HttpURLConnection.HTTP_UNAUTHORIZED || response.code == 401) {
+            throw new IOException(firebaseSessionExpiredMessage());
+        }
+        if (response.code == HttpURLConnection.HTTP_FORBIDDEN || response.code == 403) {
+            throw new IOException(firestorePermissionMessage());
+        }
+        if (response.code < 200 || response.code >= 300) {
+            throw new IOException("Runtime config check failed. HTTP " + response.code + ": " + response.body);
+        }
+
+        RuntimeGateResult result = runtimeGateFromFirestore(new JSONObject(response.body));
+        cacheRuntimeGate(result);
+        return result;
+    }
+
+    private RuntimeGateResult runtimeGateFromPrefs() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        long lastCheck = prefs.getLong(PREF_RUNTIME_GATE_LAST_CHECK, 0L);
+        boolean fresh = lastCheck > 0L && System.currentTimeMillis() - lastCheck <= RUNTIME_GATE_REFRESH_INTERVAL_MS;
+        boolean downloadsEnabled = prefs.getBoolean(PREF_RUNTIME_GATE_DOWNLOADS_ENABLED, true);
+        int minVersionCode = prefs.getInt(PREF_RUNTIME_GATE_MIN_VERSION_CODE, 0);
+        int minDownloadProtocol = prefs.getInt(PREF_RUNTIME_GATE_MIN_DOWNLOAD_PROTOCOL, 0);
+        String message = prefs.getString(PREF_RUNTIME_GATE_MESSAGE, "");
+        boolean allowed = prefs.getBoolean(PREF_RUNTIME_GATE_ALLOWED, true);
+        return new RuntimeGateResult(allowed, downloadsEnabled, minVersionCode, minDownloadProtocol, message, fresh);
+    }
+
+    private void cacheRuntimeGate(RuntimeGateResult result) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putLong(PREF_RUNTIME_GATE_LAST_CHECK, System.currentTimeMillis())
+                .putBoolean(PREF_RUNTIME_GATE_ALLOWED, result.allowed)
+                .putBoolean(PREF_RUNTIME_GATE_DOWNLOADS_ENABLED, result.downloadsEnabled)
+                .putInt(PREF_RUNTIME_GATE_MIN_VERSION_CODE, result.minVersionCode)
+                .putInt(PREF_RUNTIME_GATE_MIN_DOWNLOAD_PROTOCOL, result.minDownloadProtocol)
+                .putString(PREF_RUNTIME_GATE_MESSAGE, result.message)
+                .apply();
+    }
+
+    private RuntimeGateResult runtimeGateFromFirestore(JSONObject document) {
+        JSONObject fields = document.optJSONObject("fields");
+        boolean downloadsEnabled = firestoreBoolean(fields, "downloadsEnabled", true);
+        int minVersionCode = Math.max(0, firestoreInteger(fields, "minVersionCode", 0));
+        int minDownloadProtocol = Math.max(0, firestoreInteger(fields, "minDownloadProtocol", 0));
+        String message = firestoreString(fields, "message");
+
+        String fallbackMessage = "";
+        if (!downloadsEnabled) {
+            fallbackMessage = "Indirmeler gecici olarak kapatildi. Lutfen daha sonra tekrar deneyin.";
+        } else if (currentAppVersionCode() < minVersionCode) {
+            fallbackMessage = "Bu surum artik indirme icin desteklenmiyor. Lutfen uygulamayi guncelleyin.";
+        } else if (DOWNLOAD_PROTOCOL_VERSION < minDownloadProtocol) {
+            fallbackMessage = "Bu APK'nin indirme altyapisi artik desteklenmiyor. Lutfen yeni surume gecin.";
+        }
+        boolean allowed = downloadsEnabled
+                && currentAppVersionCode() >= minVersionCode
+                && DOWNLOAD_PROTOCOL_VERSION >= minDownloadProtocol;
+        return new RuntimeGateResult(allowed, downloadsEnabled, minVersionCode, minDownloadProtocol, firstNonEmpty(message, fallbackMessage), false);
+    }
+
+    private void showRuntimeGateDialog(RuntimeGateResult gate) {
+        String message = firstNonEmpty(gate.message, "Bu surum icin indirme gecici olarak kullanilamiyor.");
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(ui(gate.requiresUpdate() ? "Guncelleme gerekli" : "Indirme kullanilamiyor"))
+                .setMessage(ui(message))
+                .setNegativeButton(ui("Tamam"), null);
+        if (gate.requiresUpdate()) {
+            builder.setPositiveButton(ui("Guncellemeyi denetle"), (dialog, which) -> checkAppUpdate(false));
+        }
+        builder.show();
+    }
+
     private String formatDateTime(long millis) {
         if (millis <= 0L) {
             return "-";
@@ -4658,14 +4810,22 @@ public final class MainActivity extends Activity {
         licenseExecutor.execute(() -> {
             try {
                 LicenseResult result = requestLicenseValidation("", checkedEmail);
+                boolean licenseReady = result.active && !isLicenseExpiryInvalid(result.expiresAt) && !isLicenseExpired(result.expiresAt);
+                RuntimeGateResult gate = licenseReady ? requestRuntimeGate(false) : RuntimeGateResult.allowed("");
                 mainHandler.post(() -> {
                     setBusy(false, null);
                     applyLicenseResult(result);
                     if (settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE) {
                         renderLicenseSettings(settingsPanel);
                     }
-                    if (result.active && !isLicenseExpiryInvalid(result.expiresAt) && !isLicenseExpired(result.expiresAt)) {
-                        approvedAction.run();
+                    if (licenseReady) {
+                        if (gate.allowed) {
+                            approvedAction.run();
+                        } else {
+                            setStatus(gate.message, false);
+                            toast(gate.message);
+                            showRuntimeGateDialog(gate);
+                        }
                     } else {
                         setStatus(result.message, false);
                         toast(result.message);
@@ -8838,6 +8998,32 @@ public final class MainActivity extends Activity {
                 return latestVersion;
             }
             return releaseName;
+        }
+    }
+
+    private static final class RuntimeGateResult {
+        final boolean allowed;
+        final boolean downloadsEnabled;
+        final int minVersionCode;
+        final int minDownloadProtocol;
+        final String message;
+        final boolean fresh;
+
+        RuntimeGateResult(boolean allowed, boolean downloadsEnabled, int minVersionCode, int minDownloadProtocol, String message, boolean fresh) {
+            this.allowed = allowed;
+            this.downloadsEnabled = downloadsEnabled;
+            this.minVersionCode = minVersionCode;
+            this.minDownloadProtocol = minDownloadProtocol;
+            this.message = message;
+            this.fresh = fresh;
+        }
+
+        static RuntimeGateResult allowed(String message) {
+            return new RuntimeGateResult(true, true, 0, 0, message, true);
+        }
+
+        boolean requiresUpdate() {
+            return downloadsEnabled && (minVersionCode > 0 || minDownloadProtocol > 0);
         }
     }
 

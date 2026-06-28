@@ -93,7 +93,7 @@ email: kullanici@example.com
 deviceId: android-device-id
 deviceLabel: Samsung SM-...
 packageName: com.metafold.videodownloader
-appVersion: 3.32
+appVersion: 3.33
 status: pending | active | inactive
 requestId: REQ-...
 owner: Ahmet Dogan
@@ -104,4 +104,29 @@ lastDeviceChangeAt: timestamp
 nextDeviceChangeAt: timestamp
 ```
 
-Spark planda Firestore ucretsiz kota 50 kisi icin fazlasiyla yeterlidir; video indirme Firebase uzerinden yapilmaz.
+## Uzaktan indirme kapisi
+
+Cracklenmis veya eski bir APK'yi indirme tarafinda kullanissiz hale getirmek icin uygulama indirme oncesinde `app_config/runtime` dokumanini okur. Bu dokuman sadece okunabilir; kullanicilar uygulamadan degistiremez.
+
+Firestore'da su dokumani olusturun:
+
+```text
+collection: app_config
+document: runtime
+
+downloadsEnabled: true
+minVersionCode: 54
+minDownloadProtocol: 2
+message: 
+```
+
+Alanlar:
+
+- `downloadsEnabled`: `false` yapilirsa tum indirmeler gecici olarak durur.
+- `minVersionCode`: Bu sayinin altindaki APK'lar indirme yapamaz. Ornegin v3.33 icin `54`.
+- `minDownloadProtocol`: Indirme altyapisi degistiginde arttirilir. Eski APK'lar bu degerin altinda kalirsa indirme yapamaz.
+- `message`: Kullaniciya gosterilecek opsiyonel mesaj.
+
+Yeni bir APK cracklenirse bir sonraki surumde `DOWNLOAD_PROTOCOL_VERSION` arttirilir, GitHub Release'e yeni APK yuklenir ve Firestore'daki `minDownloadProtocol` yeni degere cekilir.
+
+Spark planda Firestore ucretsiz kota 50 kisi icin fazlasiyla yeterlidir; video indirme ve APK indirme Firebase uzerinden yapilmaz.

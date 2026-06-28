@@ -71,7 +71,7 @@ Kayit dokumani ornegi:
   "deviceId": "android-device-id",
   "deviceLabel": "Samsung SM-...",
   "packageName": "com.metafold.videodownloader",
-  "appVersion": "3.9",
+  "appVersion": "3.33",
   "status": "pending",
   "requestId": "REQ-...",
   "owner": "Ahmet Dogan",
@@ -79,3 +79,7 @@ Kayit dokumani ornegi:
   "licenseKey": "MFD-..."
 }
 ```
+
+## Uzaktan indirme kapisi
+
+Uygulama, lisans dogrulamadan sonra Firestore `app_config/runtime` dokumanini okuyarak eski veya iptal edilmis indirme protokollerini kapatabilir. Video ve APK dosyalari Firebase'den indirilmez; Firebase sadece kucuk lisans ve runtime config dokumanlarini okur.
