@@ -2134,6 +2134,7 @@ public final class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                flushWebCookies();
                 updateBrowserUrl(url);
             }
         });
@@ -2795,6 +2796,24 @@ public final class MainActivity extends Activity {
                 .setTitle(ui(title))
                 .setMessage(ui(message))
                 .setPositiveButton(ui("Evet"), (dialog, which) -> action.run())
+                .setNegativeButton(ui("Vazgeç"), null)
+                .show();
+    }
+
+    private void showPlatformLoginRequiredDialog(String platform, String originalUrl) {
+        SocialPlatform socialPlatform = platformByDetectedName(platform);
+        if (socialPlatform == null) {
+            return;
+        }
+        String openLabel = isEnglish() ? "Open " + socialPlatform.name : socialPlatform.name + "'a git";
+        new AlertDialog.Builder(this)
+                .setTitle(ui("Platform girişi gerekli"))
+                .setMessage(ui("Bu içerik oturum çerezi istiyor. Uygulama içindeki platform ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın."))
+                .setPositiveButton(openLabel, (dialog, which) -> {
+                    urlInput.setText(displayUrlForUi(originalUrl));
+                    urlInput.setSelection(urlInput.length());
+                    openPlatform(socialPlatform);
+                })
                 .setNegativeButton(ui("Vazgeç"), null)
                 .show();
     }
@@ -4577,6 +4596,9 @@ public final class MainActivity extends Activity {
                     setFileActionsEnabled(false);
                     markPendingPlaylistRows("Hata", Color.rgb(173, 52, 52));
                     outputView.setText(ui(errorMessage));
+                    if (isPlatformLoginError(platform, errorMessage)) {
+                        showPlatformLoginRequiredDialog(platform, normalizedUrl);
+                    }
                     startNextQueuedDownload();
                 });
             }
@@ -5317,6 +5339,7 @@ public final class MainActivity extends Activity {
 
     private File buildCookieFile(String pageUrl, File parentDir) throws IOException {
         CookieManager manager = CookieManager.getInstance();
+        flushWebCookies();
         List<String> lookupUrls = cookieLookupUrls(pageUrl);
         Map<String, CookieLine> cookies = new LinkedHashMap<>();
         for (String lookupUrl : lookupUrls) {
@@ -5375,7 +5398,10 @@ public final class MainActivity extends Activity {
         addUnique(urls, "https://m.youtube.com/");
         addUnique(urls, "https://accounts.google.com/");
         addUnique(urls, "https://www.google.com/");
+        addUnique(urls, "https://instagram.com/");
         addUnique(urls, "https://www.instagram.com/");
+        addUnique(urls, "https://m.instagram.com/");
+        addUnique(urls, "https://www.instagram.com/accounts/login/");
         addUnique(urls, "https://www.facebook.com/");
         addUnique(urls, "https://m.facebook.com/");
         addUnique(urls, "https://www.tiktok.com/");
@@ -5385,6 +5411,14 @@ public final class MainActivity extends Activity {
         addUnique(urls, "https://x.com/");
         addUnique(urls, "https://twitter.com/");
         return urls;
+    }
+
+    private void flushWebCookies() {
+        try {
+            CookieManager.getInstance().flush();
+        } catch (Exception ignored) {
+            // Cookie flush is best-effort; downloads can still try without it.
+        }
     }
 
     private Uri copyToPublicDownloads(File source, boolean audio) throws IOException {
@@ -6181,6 +6215,10 @@ public final class MainActivity extends Activity {
             case "İndirme iptal edildi.": return "Download cancelled.";
             case "Sıradaki video başlatılıyor...": return "Starting next video...";
             case "Playlist kısmen tamamlandı.": return "Playlist partially completed.";
+            case "Platform girişi gerekli": return "Platform login required";
+            case "Bu içerik oturum çerezi istiyor. Uygulama içindeki platform ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.": return "This content requires session cookies. Sign in from the platform screen inside the app, open the video, and use the Download video button.";
+            case "Instagram oturumu gerekli. Uygulama içindeki Instagram ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın. Giriş yaptıysanız Ayarlar > Veri ve önbellek bölümünden web oturum çerezlerini temizleyip tekrar giriş yapın.": return "Instagram login is required. Sign in from the Instagram screen inside the app, open the video, and use the Download video button. If you already signed in, clear web session cookies from Settings > Data and cache, then sign in again.";
+            case "Facebook oturumu gerekli. Uygulama içindeki Facebook ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.": return "Facebook login is required. Sign in from the Facebook screen inside the app, open the video, and use the Download video button.";
             case "YouTube sunucusuna ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.": return "Could not reach the YouTube server. Check your internet/DNS connection. If you use VPN, private DNS, or an ad blocker, turn it off and try again.";
             case "Ağ bağlantısı zaman aşımına uğradı. Bağlantıyı kontrol edip tekrar deneyin.": return "The network connection timed out. Check the connection and try again.";
             case "Kalite seçenekleri henüz alınmadı.": return "Quality options have not been loaded yet.";
@@ -6778,6 +6816,12 @@ public final class MainActivity extends Activity {
         }
         String cleaned = stripOutdatedWarning(message == null ? "Bilinmeyen hata" : message);
         String lower = cleaned.toLowerCase(Locale.US);
+        if (isPlatformLoginError("Instagram", cleaned)) {
+            return "Instagram oturumu gerekli. Uygulama içindeki Instagram ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın. Giriş yaptıysanız Ayarlar > Veri ve önbellek bölümünden web oturum çerezlerini temizleyip tekrar giriş yapın.";
+        }
+        if (isPlatformLoginError("Facebook", cleaned)) {
+            return "Facebook oturumu gerekli. Uygulama içindeki Facebook ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.";
+        }
         if (lower.contains("no address associated with hostname")
                 || lower.contains("unable to download api page")
                 || lower.contains("transporterror")
@@ -6788,6 +6832,27 @@ public final class MainActivity extends Activity {
             return "Ağ bağlantısı zaman aşımına uğradı. Bağlantıyı kontrol edip tekrar deneyin.";
         }
         return compactLine(cleaned, 1200);
+    }
+
+    private static boolean isPlatformLoginError(String platform, String message) {
+        if (TextUtils.isEmpty(message)) {
+            return false;
+        }
+        String lower = message.toLowerCase(Locale.US);
+        String normalizedPlatform = platform == null ? "" : platform.toLowerCase(Locale.US);
+        boolean cookieHint = lower.contains("--cookies")
+                || lower.contains("cookies")
+                || lower.contains("without being logged-in")
+                || lower.contains("login required")
+                || lower.contains("sign in")
+                || lower.contains("empty media response");
+        if ("instagram".equals(normalizedPlatform)) {
+            return lower.contains("instagram") && cookieHint;
+        }
+        if ("facebook".equals(normalizedPlatform)) {
+            return lower.contains("facebook") && cookieHint;
+        }
+        return cookieHint && lower.contains(normalizedPlatform);
     }
 
     private static String stripOutdatedWarning(String message) {
