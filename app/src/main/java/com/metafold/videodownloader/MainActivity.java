@@ -2,6 +2,7 @@ package com.metafold.videodownloader;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentValues;
@@ -11,6 +12,11 @@ import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -31,6 +37,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
 import android.webkit.CookieManager;
 import android.webkit.MimeTypeMap;
 import android.webkit.WebResourceRequest;
@@ -287,8 +294,8 @@ public final class MainActivity extends Activity {
     private TextView activePlatformUrlView;
     private WebView webView;
     private AlertDialog mandatoryUpdateDialog;
-    private AlertDialog updateDownloadDialog;
-    private ProgressBar updateDownloadProgress;
+    private Dialog updateDownloadDialog;
+    private AnimatedUpdateProgressView updateDownloadProgress;
     private TextView updateDownloadStatus;
     private TextView updateDownloadPercent;
     private TextView updateDownloadBytes;
@@ -3319,10 +3326,21 @@ public final class MainActivity extends Activity {
         AppThemeOption theme = currentTheme();
         String version = updateInfo == null ? "" : updateInfo.latestLabel();
 
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        AnimatedUpdateCardView card = new AnimatedUpdateCardView(this, theme);
+        card.setPadding(dp(20), dp(20), dp(20), dp(18));
+        card.setAlpha(0f);
+        card.setScaleX(0.96f);
+        card.setScaleY(0.96f);
+
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(18), dp(18), dp(18), dp(18));
-        panel.setBackground(rounded(theme.surfaceColor, 8, theme.borderColor));
+        card.addView(panel, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+        ));
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -3332,8 +3350,8 @@ public final class MainActivity extends Activity {
         ImageView icon = new ImageView(this);
         icon.setImageResource(R.drawable.app_icon);
         icon.setPadding(dp(4), dp(4), dp(4), dp(4));
-        icon.setBackground(rounded(softAccent(theme.accentColor), 8, theme.accentColor));
-        header.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        icon.setBackground(rounded(blend(theme.surfaceAltColor, theme.accentColor, 0.18f), 8, theme.accentColor));
+        header.addView(icon, new LinearLayout.LayoutParams(dp(52), dp(52)));
 
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
@@ -3341,11 +3359,15 @@ public final class MainActivity extends Activity {
         titleParams.leftMargin = dp(12);
         header.addView(titleBlock, titleParams);
 
-        TextView title = textView("Güncelleme indiriliyor", 19, theme.textColor, true);
+        TextView eyebrow = textView("MetaFold Downloader", 12, theme.accentColor, true);
+        titleBlock.addView(eyebrow);
+
+        TextView title = textView("Güncelleme indiriliyor", 20, theme.textColor, true);
+        title.setPadding(0, dp(2), 0, 0);
         titleBlock.addView(title);
 
         TextView subtitle = textView(TextUtils.isEmpty(version) ? "APK hazırlanıyor" : ui("Yeni sürüm") + ": " + version, 12, theme.mutedColor, false);
-        subtitle.setPadding(0, dp(3), 0, 0);
+        subtitle.setPadding(0, dp(4), 0, 0);
         titleBlock.addView(subtitle);
 
         updateDownloadPercent = textView("%0", 16, readableOn(theme.accentColor), true);
@@ -3361,38 +3383,44 @@ public final class MainActivity extends Activity {
         updateDownloadBytes.setPadding(0, dp(4), 0, 0);
         panel.addView(updateDownloadBytes, matchWrap());
 
-        updateDownloadProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        updateDownloadProgress.setMax(100);
-        updateDownloadProgress.setProgress(0);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            updateDownloadProgress.setProgressTintList(ColorStateList.valueOf(theme.accentColor));
-            updateDownloadProgress.setIndeterminateTintList(ColorStateList.valueOf(theme.accentColor));
-            updateDownloadProgress.setProgressBackgroundTintList(ColorStateList.valueOf(theme.borderColor));
-        }
+        updateDownloadProgress = new AnimatedUpdateProgressView(this, theme);
         LinearLayout.LayoutParams progressParams = matchWrap();
-        progressParams.topMargin = dp(14);
+        progressParams.topMargin = dp(16);
+        progressParams.height = dp(16);
         panel.addView(updateDownloadProgress, progressParams);
 
-        updateDownloadDialog = new AlertDialog.Builder(this)
-                .setView(panel)
-                .create();
-        updateDownloadDialog.setCancelable(false);
-        updateDownloadDialog.setCanceledOnTouchOutside(false);
-        updateDownloadDialog.show();
-        Window window = updateDownloadDialog.getWindow();
+        TextView footnote = textView("İndirme tamamlanınca kurulum ekranı açılacak.", 12, theme.mutedColor, false);
+        footnote.setPadding(0, dp(12), 0, 0);
+        panel.addView(footnote, matchWrap());
+
+        dialog.setContentView(card);
+        dialog.setCancelable(false);
+        dialog.setCanceledOnTouchOutside(false);
+        updateDownloadDialog = dialog;
+        dialog.show();
+        Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawableResource(android.R.color.transparent);
             WindowManager.LayoutParams params = window.getAttributes();
-            params.dimAmount = 0.68f;
+            params.dimAmount = 0.76f;
             window.setAttributes(params);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            int width = Math.min(getResources().getDisplayMetrics().widthPixels - dp(40), dp(430));
+            window.setLayout(Math.max(dp(280), width), WindowManager.LayoutParams.WRAP_CONTENT);
         }
+        card.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(220)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
     }
 
     private void updateUpdateDownloadProgress(int percent, long downloaded, long total) {
         int safePercent = Math.max(0, Math.min(100, percent));
         if (updateDownloadProgress != null) {
-            updateDownloadProgress.setIndeterminate(total <= 0L);
-            updateDownloadProgress.setProgress(safePercent);
+            updateDownloadProgress.setProgressPercent(safePercent, total <= 0L);
         }
         if (updateDownloadPercent != null) {
             updateDownloadPercent.setText("%" + safePercent);
@@ -5074,7 +5102,12 @@ public final class MainActivity extends Activity {
             } catch (Exception error) {
                 String rawError = rawErrorText(error);
                 boolean platformLoginError = !cancelRequested && isPlatformLoginError(platform, rawError);
-                String displayError = cancelRequested ? "İndirme iptal edildi." : (platformLoginError ? platformLoginMessage(platform) : cleanError(error));
+                boolean instagramPublicError = !cancelRequested && isInstagramPublicExtractorError(platform, rawError);
+                String displayError = cancelRequested
+                        ? "İndirme iptal edildi."
+                        : (platformLoginError
+                        ? platformLoginMessage(platform)
+                        : (instagramPublicError ? instagramPublicExtractorMessage() : cleanError(error)));
                 if (playlistMode && jobDir != null && !cancelRequested) {
                     try {
                         List<File> partialFiles = findDownloadedFiles(jobDir);
@@ -5118,7 +5151,7 @@ public final class MainActivity extends Activity {
                     }
                 }
                 final String errorMessage = displayError;
-                final boolean shouldShowPlatformLoginDialog = platformLoginError || isPlatformLoginError(platform, errorMessage);
+                final boolean shouldShowPlatformLoginDialog = platformLoginError;
                 mainHandler.post(() -> {
                     activePlaylistDownload = false;
                     setDownloading(false);
@@ -5190,6 +5223,7 @@ public final class MainActivity extends Activity {
         if (cookiesFile != null) {
             request.addOption("--cookies", cookiesFile.getAbsolutePath());
         }
+        applyPlatformRequestHints(request, url);
 
         if (option.audio) {
             String audioFormat = getString(PREF_AUDIO_FORMAT, "MP3").toLowerCase(Locale.US);
@@ -5221,6 +5255,22 @@ public final class MainActivity extends Activity {
             request.addOption("-f", "best");
         }
         return request;
+    }
+
+    private void applyPlatformRequestHints(YoutubeDLRequest request, String url) {
+        if (request == null || TextUtils.isEmpty(url)) {
+            return;
+        }
+        String platform = detectPlatform(normalizeUrl(url));
+        if ("Instagram".equals(platform)) {
+            request.addOption("--add-header", "Referer:https://www.instagram.com/");
+            request.addOption("--add-header", "Origin:https://www.instagram.com");
+            request.addOption("--add-header", "User-Agent:" + mobileBrowserUserAgent());
+        }
+    }
+
+    private static String mobileBrowserUserAgent() {
+        return "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36";
     }
 
     private PlaylistDownloadResult downloadPlaylistEntriesSequential(List<PlaylistEntry> entries, String playlistUrl, DownloadOption option, File jobDir, File cookiesFile) throws Exception {
@@ -5385,6 +5435,7 @@ public final class MainActivity extends Activity {
             if (cookiesFile != null) {
                 request.addOption("--cookies", cookiesFile.getAbsolutePath());
             }
+            applyPlatformRequestHints(request, url);
             YoutubeDLResponse response = YoutubeDL.getInstance().execute(request, PLAYLIST_LIST_PROCESS_ID);
             return parsePlaylistEntries(response == null ? "" : response.getOut());
         } catch (Exception ignored) {
@@ -5900,6 +5951,10 @@ public final class MainActivity extends Activity {
             }
         }
 
+        if ("Instagram".equals(detectPlatform(normalizeUrl(pageUrl))) && !hasInstagramSessionCookie(cookies)) {
+            cookies.values().removeIf(MainActivity::isInstagramCookie);
+        }
+
         if (cookies.isEmpty()) {
             return null;
         }
@@ -5920,6 +5975,26 @@ public final class MainActivity extends Activity {
             }
         }
         return file;
+    }
+
+    private static boolean hasInstagramSessionCookie(Map<String, CookieLine> cookies) {
+        if (cookies == null || cookies.isEmpty()) {
+            return false;
+        }
+        for (CookieLine cookie : cookies.values()) {
+            if (isInstagramCookie(cookie)
+                    && "sessionid".equalsIgnoreCase(cookie.name)
+                    && !TextUtils.isEmpty(cookie.value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isInstagramCookie(CookieLine cookie) {
+        return cookie != null
+                && cookie.domain != null
+                && cookie.domain.toLowerCase(Locale.US).contains("instagram.com");
     }
 
     private List<String> cookieLookupUrls(String pageUrl) {
@@ -6758,6 +6833,7 @@ public final class MainActivity extends Activity {
             case "Oturumla tekrar dene": return "Try with session";
             case "Girişsiz indirme başarısız oldu. Bu içerik gizli, kısıtlı veya oturum çerezi istiyor olabilir. İsterseniz uygulama içindeki platform ekranında giriş yapıp videoyu oradan indirebilirsiniz.": return "Download without sign-in failed. This content may be private, restricted, or require session cookies. You can sign in from the platform screen inside the app and download the video there.";
             case "Instagram girişsiz yanıt vermedi. Gönderi gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki Instagram ekranında giriş yapıp videoyu açarak tekrar deneyebilirsiniz.": return "Instagram did not respond without sign-in. The post may be private, restricted, or require session cookies. You can sign in from the Instagram screen inside the app, open the video, and try again.";
+            case "Instagram public video yanıtı alınamadı. Video herkese açık olsa bile Instagram bazen boş medya yanıtı döndürebiliyor. İndirme motorunu güncelleyip tekrar deneyin; devam ederse linki Instagram ekranında açıp Videoyu indir butonunu kullanın.": return "Instagram did not return a public video response. Even when the video is public, Instagram can sometimes return an empty media response. Update the download engine and try again; if it continues, open the link in the Instagram screen and use the Download video button.";
             case "Facebook girişsiz yanıt vermedi. Video gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki Facebook ekranında giriş yapıp videoyu açarak tekrar deneyebilirsiniz.": return "Facebook did not respond without sign-in. The video may be private, restricted, or require session cookies. You can sign in from the Facebook screen inside the app, open the video, and try again.";
             case "Girişsiz indirme başarısız oldu. İçerik gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki platform ekranında giriş yapıp tekrar deneyebilirsiniz.": return "Download without sign-in failed. The content may be private, restricted, or require session cookies. You can sign in from the platform screen inside the app and try again.";
             case "YouTube sunucusuna ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.": return "Could not reach the YouTube server. Check your internet/DNS connection. If you use VPN, private DNS, or an ad blocker, turn it off and try again.";
@@ -6898,6 +6974,7 @@ public final class MainActivity extends Activity {
             case "Bağlantı kuruluyor...": return "Connecting...";
             case "Dosya boyutu hesaplanıyor": return "Calculating file size";
             case "Güncelleme hazırlandı": return "Update is ready";
+            case "İndirme tamamlanınca kurulum ekranı açılacak.": return "The installer will open when the download finishes.";
             case "Güncelleme indirildi. Kurulum ekranı açılıyor...": return "Update downloaded. Opening installer...";
             case "Güncelleme indirilemedi.": return "Update could not be downloaded.";
             case "Güncelleme indirilemedi": return "Update could not be downloaded";
@@ -7395,6 +7472,9 @@ public final class MainActivity extends Activity {
         String message = rawErrorText(error);
         String cleaned = stripOutdatedWarning(message == null ? "Bilinmeyen hata" : message);
         String lower = cleaned.toLowerCase(Locale.US);
+        if (isInstagramPublicExtractorError("Instagram", cleaned)) {
+            return instagramPublicExtractorMessage();
+        }
         if (isPlatformLoginError("Instagram", cleaned)) {
             return platformLoginMessage("Instagram");
         }
@@ -7451,25 +7531,47 @@ public final class MainActivity extends Activity {
         return "Girişsiz indirme başarısız oldu. İçerik gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki platform ekranında giriş yapıp tekrar deneyebilirsiniz.";
     }
 
+    private static String instagramPublicExtractorMessage() {
+        return "Instagram public video yanıtı alınamadı. Video herkese açık olsa bile Instagram bazen boş medya yanıtı döndürebiliyor. İndirme motorunu güncelleyip tekrar deneyin; devam ederse linki Instagram ekranında açıp Videoyu indir butonunu kullanın.";
+    }
+
+    private static boolean isInstagramPublicExtractorError(String platform, String message) {
+        if (!"Instagram".equals(platform) || TextUtils.isEmpty(message)) {
+            return false;
+        }
+        String lower = message.toLowerCase(Locale.US);
+        return lower.contains("instagram") && lower.contains("empty media response");
+    }
+
     private static boolean isPlatformLoginError(String platform, String message) {
         if (TextUtils.isEmpty(message)) {
             return false;
         }
         String lower = message.toLowerCase(Locale.US);
         String normalizedPlatform = platform == null ? "" : platform.toLowerCase(Locale.US);
+        boolean explicitLogin = lower.contains("login required")
+                || lower.contains("login_required")
+                || lower.contains("requires login")
+                || lower.contains("require login")
+                || lower.contains("you need to log in")
+                || lower.contains("must be logged in")
+                || lower.contains("not logged in")
+                || lower.contains("sign in to")
+                || lower.contains("please sign in")
+                || lower.contains("checkpoint_required")
+                || lower.contains("private")
+                || lower.contains("only confirmed followers");
         boolean cookieHint = lower.contains("--cookies")
-                || lower.contains("cookies")
-                || lower.contains("without being logged-in")
-                || lower.contains("login required")
-                || lower.contains("sign in")
-                || lower.contains("empty media response");
+                || lower.contains("cookies");
         if ("instagram".equals(normalizedPlatform)) {
-            return lower.contains("instagram") && cookieHint;
+            return lower.contains("instagram") && explicitLogin;
         }
         if ("facebook".equals(normalizedPlatform)) {
-            return lower.contains("facebook") && cookieHint;
+            return lower.contains("facebook") && (explicitLogin || cookieHint);
         }
-        return cookieHint && lower.contains(normalizedPlatform);
+        return !TextUtils.isEmpty(normalizedPlatform)
+                && lower.contains(normalizedPlatform)
+                && (explicitLogin || cookieHint);
     }
 
     private static String stripOutdatedWarning(String message) {
@@ -7536,6 +7638,170 @@ public final class MainActivity extends Activity {
             this.includeBox = includeBox;
             this.actionButton = actionButton;
         }
+    }
+
+    private static final class AnimatedUpdateCardView extends FrameLayout {
+        private final AppThemeOption theme;
+        private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint bandPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint borderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+        private final float density;
+        private LinearGradient cachedGradient;
+        private int cachedWidth;
+        private int cachedHeight;
+
+        AnimatedUpdateCardView(Context context, AppThemeOption theme) {
+            super(context);
+            this.theme = theme;
+            this.density = context.getResources().getDisplayMetrics().density;
+            setWillNotDraw(false);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+            borderPaint.setStyle(Paint.Style.STROKE);
+            borderPaint.setStrokeWidth(dpLocal(1));
+            borderPaint.setColor(theme.borderColor);
+            bandPaint.setStyle(Paint.Style.STROKE);
+            bandPaint.setStrokeWidth(dpLocal(1.35f));
+            bandPaint.setColor(Color.argb(isDark(theme) ? 46 : 30, Color.red(theme.accentColor), Color.green(theme.accentColor), Color.blue(theme.accentColor)));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            int width = getWidth();
+            int height = getHeight();
+            if (width <= 0 || height <= 0) {
+                super.onDraw(canvas);
+                return;
+            }
+
+            float inset = dpLocal(2);
+            float radius = dpLocal(18);
+            rect.set(inset, inset, width - inset, height - inset);
+            if (cachedGradient == null || cachedWidth != width || cachedHeight != height) {
+                cachedWidth = width;
+                cachedHeight = height;
+                int top = mix(theme.surfaceColor, theme.accentColor, isDark(theme) ? 0.17f : 0.08f);
+                int mid = theme.surfaceColor;
+                int bottom = mix(theme.surfaceAltColor, theme.accentColor, isDark(theme) ? 0.10f : 0.05f);
+                cachedGradient = new LinearGradient(0, 0, width, height, new int[]{top, mid, bottom}, new float[]{0f, 0.56f, 1f}, Shader.TileMode.CLAMP);
+            }
+
+            fillPaint.setShader(cachedGradient);
+            fillPaint.setShadowLayer(dpLocal(18), 0, dpLocal(8), Color.argb(isDark(theme) ? 120 : 42, 0, 0, 0));
+            canvas.drawRoundRect(rect, radius, radius, fillPaint);
+            fillPaint.setShader(null);
+            fillPaint.clearShadowLayer();
+
+            float step = dpLocal(34);
+            float travel = (System.currentTimeMillis() % 1800L) / 1800f * step;
+            canvas.save();
+            canvas.clipRect(rect);
+            for (float x = -height + travel; x < width + height; x += step) {
+                canvas.drawLine(x, height, x + height, 0, bandPaint);
+            }
+            canvas.restore();
+
+            canvas.drawRoundRect(rect, radius, radius, borderPaint);
+            super.onDraw(canvas);
+            postInvalidateOnAnimation();
+        }
+
+        private float dpLocal(float value) {
+            return value * density;
+        }
+    }
+
+    private static final class AnimatedUpdateProgressView extends View {
+        private final AppThemeOption theme;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint stripePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+        private final float density;
+        private int progress;
+        private boolean indeterminate;
+
+        AnimatedUpdateProgressView(Context context, AppThemeOption theme) {
+            super(context);
+            this.theme = theme;
+            this.density = context.getResources().getDisplayMetrics().density;
+            stripePaint.setStyle(Paint.Style.STROKE);
+            stripePaint.setStrokeWidth(dpLocal(2));
+            stripePaint.setColor(Color.argb(isDark(theme) ? 84 : 92, 255, 255, 255));
+        }
+
+        void setProgressPercent(int progress, boolean indeterminate) {
+            this.progress = Math.max(0, Math.min(100, progress));
+            this.indeterminate = indeterminate;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            int width = getWidth();
+            int height = getHeight();
+            if (width <= 0 || height <= 0) {
+                return;
+            }
+
+            float radius = height / 2f;
+            rect.set(0, 0, width, height);
+            paint.setShader(null);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(mix(theme.surfaceAltColor, theme.borderColor, isDark(theme) ? 0.50f : 0.35f));
+            canvas.drawRoundRect(rect, radius, radius, paint);
+
+            float phase = (System.currentTimeMillis() % 1300L) / 1300f;
+            if (indeterminate) {
+                float progressWidth = width * 0.42f;
+                float start = phase * (width + progressWidth) - progressWidth;
+                rect.set(start, 0, Math.min(width, start + progressWidth), height);
+            } else {
+                float progressWidth = Math.max(radius, width * (progress / 100f));
+                rect.set(0, 0, progressWidth, height);
+            }
+
+            int bright = mix(theme.accentColor, Color.WHITE, isDark(theme) ? 0.18f : 0.28f);
+            paint.setShader(new LinearGradient(rect.left, 0, Math.max(rect.left + 1, rect.right), 0,
+                    new int[]{theme.accentColor, bright, theme.accentColor},
+                    new float[]{0f, 0.55f, 1f},
+                    Shader.TileMode.CLAMP));
+            canvas.drawRoundRect(rect, radius, radius, paint);
+            paint.setShader(null);
+
+            canvas.save();
+            canvas.clipRect(rect);
+            float step = dpLocal(20);
+            float travel = phase * step;
+            for (float x = -height + travel; x < width + height; x += step) {
+                canvas.drawLine(x, height, x + height, 0, stripePaint);
+            }
+            canvas.restore();
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dpLocal(1));
+            paint.setColor(theme.borderColor);
+            rect.set(0.5f, 0.5f, width - 0.5f, height - 0.5f);
+            canvas.drawRoundRect(rect, radius, radius, paint);
+            postInvalidateOnAnimation();
+        }
+
+        private float dpLocal(float value) {
+            return value * density;
+        }
+    }
+
+    private static boolean isDark(AppThemeOption theme) {
+        return luminance(theme.backgroundColor) < 0.35;
+    }
+
+    private static int mix(int base, int overlay, float overlayWeight) {
+        float clamped = Math.max(0f, Math.min(1f, overlayWeight));
+        float baseWeight = 1f - clamped;
+        return Color.rgb(
+                Math.round(Color.red(base) * baseWeight + Color.red(overlay) * clamped),
+                Math.round(Color.green(base) * baseWeight + Color.green(overlay) * clamped),
+                Math.round(Color.blue(base) * baseWeight + Color.blue(overlay) * clamped)
+        );
     }
 
     private static final class DownloadOption {
