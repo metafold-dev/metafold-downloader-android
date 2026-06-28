@@ -2920,8 +2920,8 @@ public final class MainActivity extends Activity {
         }
         String openLabel = isEnglish() ? "Open " + socialPlatform.name : socialPlatform.name + "'a git";
         new AlertDialog.Builder(this)
-                .setTitle(ui("Platform girişi gerekli"))
-                .setMessage(ui("Bu içerik oturum çerezi istiyor. Uygulama içindeki platform ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın."))
+                .setTitle(ui("Oturumla tekrar dene"))
+                .setMessage(ui("Girişsiz indirme başarısız oldu. Bu içerik gizli, kısıtlı veya oturum çerezi istiyor olabilir. İsterseniz uygulama içindeki platform ekranında giriş yapıp videoyu oradan indirebilirsiniz."))
                 .setPositiveButton(openLabel, (dialog, which) -> {
                     urlInput.setText(displayUrlForUi(originalUrl));
                     urlInput.setSelection(urlInput.length());
@@ -4877,12 +4877,6 @@ public final class MainActivity extends Activity {
             setStatus("Desteklenen platformlar: YouTube, Instagram, Facebook, TikTok, Pinterest, X.", false);
             return;
         }
-        if (requiresLoggedInPlatformSession(platform) && !hasPlatformSessionCookies(platform, normalizedUrl)) {
-            setStatus(platform + " oturumu gerekli.", false);
-            outputView.setText(ui(platformLoginMessage(platform)));
-            showPlatformLoginRequiredDialog(platform, normalizedUrl);
-            return;
-        }
         boolean playlistMode = isPlaylistModeEnabled(normalizedUrl);
         if (selectedOption == null || !normalizedUrl.equals(currentInfoUrl) || playlistMode != currentInfoPlaylistMode) {
             setStatus("Önce indirme seçeneklerini getirip kalite seçin.", false);
@@ -5892,32 +5886,6 @@ public final class MainActivity extends Activity {
         return urls;
     }
 
-    private boolean requiresLoggedInPlatformSession(String platform) {
-        return "Instagram".equals(platform);
-    }
-
-    private boolean hasPlatformSessionCookies(String platform, String pageUrl) {
-        try {
-            CookieManager manager = CookieManager.getInstance();
-            for (String lookupUrl : cookieLookupUrls(pageUrl)) {
-                String raw = manager.getCookie(lookupUrl);
-                if (TextUtils.isEmpty(raw)) {
-                    continue;
-                }
-                String lower = raw.toLowerCase(Locale.US);
-                if ("Instagram".equals(platform) && (lower.contains("sessionid=") || lower.contains("ds_user_id="))) {
-                    return true;
-                }
-                if ("Facebook".equals(platform) && lower.contains("c_user=")) {
-                    return true;
-                }
-            }
-        } catch (Exception ignored) {
-            // If cookies cannot be read, let the normal download error path handle it.
-        }
-        return false;
-    }
-
     private void flushWebCookies() {
         try {
             CookieManager.getInstance().flush();
@@ -6729,10 +6697,11 @@ public final class MainActivity extends Activity {
             case "İndirme iptal edildi.": return "Download cancelled.";
             case "Sıradaki video başlatılıyor...": return "Starting next video...";
             case "Playlist kısmen tamamlandı.": return "Playlist partially completed.";
-            case "Platform girişi gerekli": return "Platform login required";
-            case "Bu içerik oturum çerezi istiyor. Uygulama içindeki platform ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.": return "This content requires session cookies. Sign in from the platform screen inside the app, open the video, and use the Download video button.";
-            case "Instagram oturumu gerekli. Uygulama içindeki Instagram ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın. Giriş yaptıysanız Ayarlar > Veri ve önbellek bölümünden web oturum çerezlerini temizleyip tekrar giriş yapın.": return "Instagram login is required. Sign in from the Instagram screen inside the app, open the video, and use the Download video button. If you already signed in, clear web session cookies from Settings > Data and cache, then sign in again.";
-            case "Facebook oturumu gerekli. Uygulama içindeki Facebook ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.": return "Facebook login is required. Sign in from the Facebook screen inside the app, open the video, and use the Download video button.";
+            case "Oturumla tekrar dene": return "Try with session";
+            case "Girişsiz indirme başarısız oldu. Bu içerik gizli, kısıtlı veya oturum çerezi istiyor olabilir. İsterseniz uygulama içindeki platform ekranında giriş yapıp videoyu oradan indirebilirsiniz.": return "Download without sign-in failed. This content may be private, restricted, or require session cookies. You can sign in from the platform screen inside the app and download the video there.";
+            case "Instagram girişsiz yanıt vermedi. Gönderi gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki Instagram ekranında giriş yapıp videoyu açarak tekrar deneyebilirsiniz.": return "Instagram did not respond without sign-in. The post may be private, restricted, or require session cookies. You can sign in from the Instagram screen inside the app, open the video, and try again.";
+            case "Facebook girişsiz yanıt vermedi. Video gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki Facebook ekranında giriş yapıp videoyu açarak tekrar deneyebilirsiniz.": return "Facebook did not respond without sign-in. The video may be private, restricted, or require session cookies. You can sign in from the Facebook screen inside the app, open the video, and try again.";
+            case "Girişsiz indirme başarısız oldu. İçerik gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki platform ekranında giriş yapıp tekrar deneyebilirsiniz.": return "Download without sign-in failed. The content may be private, restricted, or require session cookies. You can sign in from the platform screen inside the app and try again.";
             case "YouTube sunucusuna ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.": return "Could not reach the YouTube server. Check your internet/DNS connection. If you use VPN, private DNS, or an ad blocker, turn it off and try again.";
             case "Ağ bağlantısı zaman aşımına uğradı. Bağlantıyı kontrol edip tekrar deneyin.": return "The network connection timed out. Check the connection and try again.";
             case "Kalite seçenekleri henüz alınmadı.": return "Quality options have not been loaded yet.";
@@ -7412,12 +7381,12 @@ public final class MainActivity extends Activity {
 
     private static String platformLoginMessage(String platform) {
         if ("Instagram".equals(platform)) {
-            return "Instagram oturumu gerekli. Uygulama içindeki Instagram ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın. Giriş yaptıysanız Ayarlar > Veri ve önbellek bölümünden web oturum çerezlerini temizleyip tekrar giriş yapın.";
+            return "Instagram girişsiz yanıt vermedi. Gönderi gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki Instagram ekranında giriş yapıp videoyu açarak tekrar deneyebilirsiniz.";
         }
         if ("Facebook".equals(platform)) {
-            return "Facebook oturumu gerekli. Uygulama içindeki Facebook ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.";
+            return "Facebook girişsiz yanıt vermedi. Video gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki Facebook ekranında giriş yapıp videoyu açarak tekrar deneyebilirsiniz.";
         }
-        return "Platform oturumu gerekli. Uygulama içindeki platform ekranında giriş yapın, videoyu açın ve Videoyu indir butonunu kullanın.";
+        return "Girişsiz indirme başarısız oldu. İçerik gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki platform ekranında giriş yapıp tekrar deneyebilirsiniz.";
     }
 
     private static boolean isPlatformLoginError(String platform, String message) {
