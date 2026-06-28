@@ -3097,11 +3097,13 @@ public final class MainActivity extends Activity {
                 .setTitle(ui("Yeni sürüm hazır"))
                 .setMessage(ui("Kurulu sürüm") + ": " + updateInfo.currentVersion + "\n" +
                         ui("Yeni sürüm") + ": " + updateInfo.latestLabel() + "\n\n" +
-                        ui("Güncelleme GitHub Releases üzerinden alınacak."))
-                .setPositiveButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl))
+                        ui("Güncelleme uygulama içinde indirilecek. Kurulum ekranında Android onayı gereklidir."))
                 .setNegativeButton(ui("Vazgeç"), null);
         if (!TextUtils.isEmpty(updateInfo.apkUrl)) {
-            builder.setNeutralButton(ui("Güncelle"), (dialog, which) -> openUpdateTarget(updateInfo));
+            builder.setPositiveButton(ui("İndir ve kur"), (dialog, which) -> openUpdateTarget(updateInfo));
+            builder.setNeutralButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl));
+        } else {
+            builder.setPositiveButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl));
         }
         builder.show();
     }
@@ -3111,11 +3113,13 @@ public final class MainActivity extends Activity {
                 .setTitle(ui("Güncelleme bulundu"))
                 .setMessage(ui("Kurulu sürüm") + ": " + updateInfo.currentVersion + "\n" +
                         ui("Yeni sürüm") + ": " + updateInfo.latestLabel() + "\n\n" +
-                        ui("Güncelleme GitHub Releases üzerinden alınacak."))
-                .setPositiveButton(ui("Güncelle"), (dialog, which) -> openUpdateTarget(updateInfo))
+                        ui("Güncelleme uygulama içinde indirilecek. Kurulum ekranında Android onayı gereklidir."))
                 .setNegativeButton(ui("Daha sonra hatırlat"), (dialog, which) -> snoozeAppUpdate(updateInfo));
         if (!TextUtils.isEmpty(updateInfo.apkUrl)) {
+            builder.setPositiveButton(ui("İndir ve kur"), (dialog, which) -> openUpdateTarget(updateInfo));
             builder.setNeutralButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl));
+        } else {
+            builder.setPositiveButton(ui("Release sayfasını aç"), (dialog, which) -> openWebsite(updateInfo.htmlUrl));
         }
         builder.show();
     }
@@ -3386,8 +3390,8 @@ public final class MainActivity extends Activity {
                         ui("Kurulu sürüm") + ": " + info.currentVersion + "\n" +
                         ui("Yeni sürüm") + ": " + info.latestLabel() + "\n\n" +
                         ui("Devam etmek için uygulamayı güncelleyin."))
-                .setPositiveButton(ui("Release sayfasını aç"), null)
-                .setNeutralButton(ui("Güncelle"), null)
+                .setPositiveButton(ui(TextUtils.isEmpty(info.apkUrl) ? "Release sayfasını aç" : "İndir ve kur"), null)
+                .setNeutralButton(ui("Release sayfasını aç"), null)
                 .setNegativeButton(ui("Uygulamayı kapat"), (dialogInterface, which) -> finish())
                 .create();
         dialog.setCancelable(false);
@@ -3398,17 +3402,21 @@ public final class MainActivity extends Activity {
             }
         });
         dialog.setOnShowListener(shown -> {
-            Button releaseButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            if (releaseButton != null) {
-                releaseButton.setOnClickListener(v -> openWebsite(info.htmlUrl));
-            }
-            Button apkButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
-            if (apkButton != null) {
-                apkButton.setVisibility(TextUtils.isEmpty(info.apkUrl) ? View.GONE : View.VISIBLE);
-                apkButton.setOnClickListener(v -> {
-                    dialog.dismiss();
-                    openUpdateTarget(info);
+            Button installButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (installButton != null) {
+                installButton.setOnClickListener(v -> {
+                    if (TextUtils.isEmpty(info.apkUrl)) {
+                        openWebsite(info.htmlUrl);
+                    } else {
+                        dialog.dismiss();
+                        openUpdateTarget(info);
+                    }
                 });
+            }
+            Button releaseButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+            if (releaseButton != null) {
+                releaseButton.setVisibility(TextUtils.isEmpty(info.apkUrl) ? View.GONE : View.VISIBLE);
+                releaseButton.setOnClickListener(v -> openWebsite(info.htmlUrl));
             }
         });
         mandatoryUpdateDialog = dialog;
@@ -6730,6 +6738,8 @@ public final class MainActivity extends Activity {
             case "Yeni sürüm hazır": return "New version is ready";
             case "Yeni sürüm": return "New version";
             case "Güncelleme GitHub Releases üzerinden alınacak.": return "The update will be fetched through GitHub Releases.";
+            case "Güncelleme uygulama içinde indirilecek. Kurulum ekranında Android onayı gereklidir.": return "The update will be downloaded inside the app. Android approval is required on the installer screen.";
+            case "İndir ve kur": return "Download and install";
             case "Güncelleme indiriliyor": return "Downloading update";
             case "Güncelleme indiriliyor...": return "Downloading update...";
             case "Güncelleme indirildi. Kurulum ekranı açılıyor...": return "Update downloaded. Opening installer...";
