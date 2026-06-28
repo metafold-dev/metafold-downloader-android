@@ -164,6 +164,7 @@ public final class MainActivity extends Activity {
     private static final String PREF_MANDATORY_UPDATE_HTML_URL = "mandatory_update_html_url";
     private static final String PREF_MANDATORY_UPDATE_APK_URL = "mandatory_update_apk_url";
     private static final String PREF_MANDATORY_UPDATE_RELEASE_NAME = "mandatory_update_release_name";
+    private static final String PREF_HIDDEN_DOWNLOAD_KEYS = "hidden_download_keys";
     private static final String PREF_LICENSE_KEY = "license_key";
     private static final String PREF_LICENSE_EMAIL = "license_email";
     private static final String PREF_LICENSE_REQUEST_ID = "license_request_id";
@@ -1264,6 +1265,42 @@ public final class MainActivity extends Activity {
         close.setOnClickListener(v -> closeDrawer());
         headerRow.addView(close, new LinearLayout.LayoutParams(dp(46), dp(44)));
 
+        addDrawerItem("Ana ekran", "Tanıtım ve hızlı kısayollar", R.drawable.ic_home, () -> {
+            closeDrawer();
+            showHome();
+        });
+
+        addDrawerSection("Platformlar");
+        for (SocialPlatform platform : PLATFORMS) {
+            addDrawerItem(platform.name, "Akışı aç", platform.iconRes, () -> {
+                closeDrawer();
+                openPlatform(platform);
+            });
+        }
+        addDrawerItem("Link ile indir", "Paylaşılan bağlantıdan seçenekleri getir", R.drawable.ic_link, () -> {
+            closeDrawer();
+            showDownloader();
+        });
+
+        addDrawerSection("Menü");
+        addDrawerItem("İndirilenler", "Dosyaları aç veya paylaş", R.drawable.ic_downloads, () -> {
+            closeDrawer();
+            showDownloads();
+        });
+        addDrawerItem("Aktif platform akışı", "Seçili platformda gezin", R.drawable.ic_link, () -> {
+            closeDrawer();
+            openPlatform(activePlatform);
+        });
+        addDrawerItem("Ayarlar", "Kalite, dil, görünüm ve bildirimler", R.drawable.ic_settings, () -> {
+            closeDrawer();
+            showSettings();
+        });
+        addDrawerItem("Hakkında", "Ahmet Doğan ve MetaFold bilgileri", R.drawable.ic_about, () -> {
+            closeDrawer();
+            showAbout();
+        });
+
+        addDrawerSection("Temalar");
         activePlatformCard = new LinearLayout(this);
         activePlatformCard.setOrientation(LinearLayout.HORIZONTAL);
         activePlatformCard.setGravity(Gravity.CENTER_VERTICAL);
@@ -1271,7 +1308,7 @@ public final class MainActivity extends Activity {
         activePlatformCard.setBackground(rounded(softAccent(theme.accentColor), 8, theme.accentColor));
         activePlatformCard.setOnClickListener(v -> showThemeChooser());
         LinearLayout.LayoutParams activeParams = matchWrap();
-        activeParams.topMargin = dp(18);
+        activeParams.topMargin = dp(8);
         drawerPanel.addView(activePlatformCard, activeParams);
 
         activePlatformIcon = new ImageView(this);
@@ -1287,40 +1324,6 @@ public final class MainActivity extends Activity {
         activeTexts.addView(activePlatformNameView);
         activePlatformUrlView = textView("", 12, theme.mutedColor, false);
         activeTexts.addView(activePlatformUrlView);
-
-        addDrawerSection("Platformlar");
-        for (SocialPlatform platform : PLATFORMS) {
-            addDrawerItem(platform.name, "Akışı aç", platform.iconRes, () -> {
-                closeDrawer();
-                openPlatform(platform);
-            });
-        }
-
-        addDrawerSection("Menü");
-        addDrawerItem("Ana ekran", "Tanıtım ve hızlı kısayollar", R.drawable.ic_home, () -> {
-            closeDrawer();
-            showHome();
-        });
-        addDrawerItem("Link ile indir", "Paylaşılan bağlantıdan seçenekleri getir", R.drawable.ic_link, () -> {
-            closeDrawer();
-            showDownloader();
-        });
-        addDrawerItem("Aktif platform akışı", "Seçili platformda gezin", R.drawable.ic_link, () -> {
-            closeDrawer();
-            openPlatform(activePlatform);
-        });
-        addDrawerItem("İndirilenler", "Dosyaları aç veya paylaş", R.drawable.ic_downloads, () -> {
-            closeDrawer();
-            showDownloads();
-        });
-        addDrawerItem("Ayarlar", "Kalite, dil, görünüm ve bildirimler", R.drawable.ic_settings, () -> {
-            closeDrawer();
-            showSettings();
-        });
-        addDrawerItem("Hakkında", "Ahmet Doğan ve MetaFold bilgileri", R.drawable.ic_about, () -> {
-            closeDrawer();
-            showAbout();
-        });
 
         updatePlatformHeader();
         return overlay;
@@ -1561,11 +1564,21 @@ public final class MainActivity extends Activity {
         });
         panel.addView(downloadSearchInput, matchWrap());
 
+        LinearLayout listActions = new LinearLayout(this);
+        listActions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams listActionParams = matchWrap();
+        listActionParams.topMargin = dp(8);
+        panel.addView(listActions, listActionParams);
+
         Button refreshButton = secondaryButton("Listeyi yenile");
         refreshButton.setOnClickListener(v -> refreshDownloads());
-        LinearLayout.LayoutParams refreshParams = matchWrap();
-        refreshParams.topMargin = dp(8);
-        panel.addView(refreshButton, refreshParams);
+        listActions.addView(refreshButton, rowWeight());
+
+        Button clearListButton = secondaryButton("Listeyi temizle");
+        clearListButton.setOnClickListener(v -> confirmClearDownloadsList());
+        LinearLayout.LayoutParams clearListParams = rowWeight();
+        clearListParams.leftMargin = dp(8);
+        listActions.addView(clearListButton, clearListParams);
 
         downloadsSelectionBar = new LinearLayout(this);
         downloadsSelectionBar.setOrientation(LinearLayout.VERTICAL);
@@ -1586,8 +1599,8 @@ public final class MainActivity extends Activity {
         selectAllDownloadsButton.setOnClickListener(v -> toggleSelectAllVisibleDownloads());
         selectionActions.addView(selectAllDownloadsButton, rowWeight());
 
-        deleteSelectedDownloadsButton = primaryButton("Sil", Color.rgb(198, 40, 40));
-        deleteSelectedDownloadsButton.setOnClickListener(v -> confirmDeleteSelectedDownloads());
+        deleteSelectedDownloadsButton = primaryButton("Listeden kaldır", Color.rgb(198, 40, 40));
+        deleteSelectedDownloadsButton.setOnClickListener(v -> confirmRemoveSelectedDownloadsFromApp());
         LinearLayout.LayoutParams deleteParams = rowWeight();
         deleteParams.leftMargin = dp(8);
         selectionActions.addView(deleteSelectedDownloadsButton, deleteParams);
@@ -2357,19 +2370,23 @@ public final class MainActivity extends Activity {
             collectCandidateFiles(jobs, files);
         }
         files.sort(Comparator.comparingLong(File::lastModified).reversed());
+        pruneHiddenDownloadKeys(files);
+        Set<String> hiddenDownloadKeys = hiddenDownloadKeys();
 
         String query = downloadSearchInput == null ? "" : downloadSearchInput.getText().toString().trim();
         DateFormat formatter = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale.getDefault());
         for (File file : files) {
-            if (matchesDownloadSearch(file, formatter, query)) {
+            if (!hiddenDownloadKeys.contains(downloadKey(file)) && matchesDownloadSearch(file, formatter, query)) {
                 displayedDownloads.add(file);
             }
         }
-        pruneDownloadSelection(files);
+        pruneDownloadSelection(displayedDownloads);
         updateDownloadSelectionBar();
 
         if (displayedDownloads.isEmpty()) {
-            String message = files.isEmpty() ? "Henüz indirilen dosya yok." : "Aramaya uygun dosya bulunamadı.";
+            String message = files.isEmpty()
+                    ? "Henüz indirilen dosya yok."
+                    : (TextUtils.isEmpty(query) ? "İndirme listesi temiz. Dosyalar klasörde duruyor." : "Aramaya uygun dosya bulunamadı.");
             TextView empty = textView(message, 13, Color.rgb(96, 112, 106), false);
             downloadsList.addView(empty);
             return;
@@ -2536,7 +2553,7 @@ public final class MainActivity extends Activity {
         downloadSelectionStatus.setText(ui("Seçilen: " + visibleSelected + " / " + displayedDownloads.size()));
         if (deleteSelectedDownloadsButton != null) {
             deleteSelectedDownloadsButton.setEnabled(visibleSelected > 0);
-            deleteSelectedDownloadsButton.setText(ui(visibleSelected > 0 ? "Sil (" + visibleSelected + ")" : "Sil"));
+            deleteSelectedDownloadsButton.setText(ui(visibleSelected > 0 ? "Listeden kaldır (" + visibleSelected + ")" : "Listeden kaldır"));
         }
         if (selectAllDownloadsButton != null) {
             boolean allVisibleSelected = !displayedDownloads.isEmpty() && visibleSelected == displayedDownloads.size();
@@ -2569,37 +2586,58 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void confirmDeleteSelectedDownloads() {
+    private void confirmRemoveSelectedDownloadsFromApp() {
         int count = selectedVisibleDownloadCount();
         if (count <= 0) {
             toast("Önce dosya seçin");
             return;
         }
         confirm(
-                "Seçilenleri sil",
-                count + " indirme kaydı silinsin mi?",
-                this::deleteSelectedDownloads
+                "Seçilenleri listeden kaldır",
+                count + " kayıt uygulama listesinden kaldırılsın mı? Dosyalar klasörden silinmez.",
+                this::removeSelectedDownloadsFromApp
         );
     }
 
-    private void deleteSelectedDownloads() {
+    private void confirmClearDownloadsList() {
+        List<File> visibleFiles = visibleDownloadFilesWithoutSearch();
+        if (visibleFiles.isEmpty()) {
+            toast("Temizlenecek kayıt yok");
+            return;
+        }
+        confirm(
+                "İndirme listesini temizle",
+                visibleFiles.size() + " kayıt uygulama listesinden kaldırılsın mı? Dosyalar klasörden silinmez.",
+                () -> clearDownloadsListFromApp(visibleFiles)
+        );
+    }
+
+    private void clearDownloadsListFromApp(List<File> files) {
+        hideDownloadsFromApp(files);
+        for (File file : files) {
+            if (lastFile != null && sameFile(file, lastFile)) {
+                lastFile = null;
+                lastUri = null;
+                setFileActionsEnabled(false);
+                hideLastDownloadSummary();
+            }
+        }
+        clearDownloadSelection(false);
+        refreshDownloads();
+        toast(files.size() + " kayıt listeden kaldırıldı");
+    }
+
+    private void removeSelectedDownloadsFromApp() {
         Set<String> selected = new HashSet<>(selectedDownloadPaths);
-        Set<File> jobDirectories = new HashSet<>();
-        int deleted = 0;
+        List<File> filesToHide = new ArrayList<>();
+        int removed = 0;
 
         for (File file : new ArrayList<>(displayedDownloads)) {
             if (!selected.contains(downloadKey(file))) {
                 continue;
             }
-            File jobDirectory = jobDirectoryFor(file);
-            if (jobDirectory != null) {
-                jobDirectories.add(jobDirectory);
-            }
-            if (!file.exists() || file.delete()) {
-                deleted++;
-            } else {
-                file.deleteOnExit();
-            }
+            filesToHide.add(file);
+            removed++;
             if (lastFile != null && sameFile(file, lastFile)) {
                 lastFile = null;
                 lastUri = null;
@@ -2608,13 +2646,72 @@ public final class MainActivity extends Activity {
             }
         }
 
-        for (File jobDirectory : jobDirectories) {
-            cleanupJobDirectory(jobDirectory);
-        }
-
+        hideDownloadsFromApp(filesToHide);
         clearDownloadSelection(false);
         refreshDownloads();
-        toast(deleted + " dosya silindi");
+        toast(removed + " kayıt listeden kaldırıldı");
+    }
+
+    private List<File> visibleDownloadFilesWithoutSearch() {
+        File root = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        File jobs = root == null ? null : new File(root, "jobs");
+        List<File> files = new ArrayList<>();
+        if (jobs != null && jobs.isDirectory()) {
+            collectCandidateFiles(jobs, files);
+        }
+        files.sort(Comparator.comparingLong(File::lastModified).reversed());
+        pruneHiddenDownloadKeys(files);
+        Set<String> hidden = hiddenDownloadKeys();
+        List<File> visible = new ArrayList<>();
+        for (File file : files) {
+            if (!hidden.contains(downloadKey(file))) {
+                visible.add(file);
+            }
+        }
+        return visible;
+    }
+
+    private void hideDownloadsFromApp(List<File> files) {
+        if (files == null || files.isEmpty()) {
+            return;
+        }
+        Set<String> hidden = hiddenDownloadKeys();
+        boolean changed = false;
+        for (File file : files) {
+            String key = downloadKey(file);
+            if (!TextUtils.isEmpty(key) && hidden.add(key)) {
+                changed = true;
+            }
+        }
+        if (changed) {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .edit()
+                    .putStringSet(PREF_HIDDEN_DOWNLOAD_KEYS, hidden)
+                    .apply();
+        }
+    }
+
+    private Set<String> hiddenDownloadKeys() {
+        Set<String> stored = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getStringSet(PREF_HIDDEN_DOWNLOAD_KEYS, Collections.emptySet());
+        return new HashSet<>(stored);
+    }
+
+    private void pruneHiddenDownloadKeys(List<File> existingFiles) {
+        Set<String> hidden = hiddenDownloadKeys();
+        if (hidden.isEmpty()) {
+            return;
+        }
+        Set<String> existing = new HashSet<>();
+        for (File file : existingFiles) {
+            existing.add(downloadKey(file));
+        }
+        if (hidden.retainAll(existing)) {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .edit()
+                    .putStringSet(PREF_HIDDEN_DOWNLOAD_KEYS, hidden)
+                    .apply();
+        }
     }
 
     private void cleanupJobDirectory(File jobDirectory) {
@@ -6418,6 +6515,15 @@ public final class MainActivity extends Activity {
         if (value.startsWith("Kuyruğa eklendi. Bekleyen: ")) {
             return "Added to queue. Waiting: " + value.substring("Kuyruğa eklendi. Bekleyen: ".length());
         }
+        if (value.startsWith("Listeden kaldır (")) {
+            return value.replace("Listeden kaldır", "Remove from list");
+        }
+        if (value.endsWith(" kayıt listeden kaldırıldı")) {
+            return value.replace(" kayıt listeden kaldırıldı", " record(s) removed from the app list");
+        }
+        if (value.endsWith(" kayıt uygulama listesinden kaldırılsın mı? Dosyalar klasörden silinmez.")) {
+            return value.replace(" kayıt uygulama listesinden kaldırılsın mı? Dosyalar klasörden silinmez.", " record(s) will be removed from the app list. Files will stay in the folder.");
+        }
         if (value.endsWith(" dosya silindi")) {
             return value.replace(" dosya silindi", " file(s) deleted");
         }
@@ -6539,15 +6645,21 @@ public final class MainActivity extends Activity {
             case "Videoyu indir": return "Download video";
             case "İndirilenlerde ara": return "Search downloads";
             case "Listeyi yenile": return "Refresh list";
+            case "Listeyi temizle": return "Clear list";
             case "Tümünü seç": return "Select all";
             case "Seçimi kaldır": return "Clear selection";
             case "Sil": return "Delete";
+            case "Listeden kaldır": return "Remove from list";
             case "Bitti": return "Done";
             case "Henüz indirilen dosya yok.": return "No downloads yet.";
+            case "İndirme listesi temiz. Dosyalar klasörde duruyor.": return "Download list is clear. Files are still in the folder.";
             case "Aramaya uygun dosya bulunamadı.": return "No files match your search.";
             case "Seçilecek dosya yok": return "No files to select";
             case "Önce dosya seçin": return "Select a file first";
             case "Seçilenleri sil": return "Delete selected";
+            case "Seçilenleri listeden kaldır": return "Remove selected from list";
+            case "İndirme listesini temizle": return "Clear download list";
+            case "Temizlenecek kayıt yok": return "No records to clear";
             case "Evet": return "Yes";
             case "Vazgeç": return "Cancel";
             case "Video ve ses": return "Video and audio";
