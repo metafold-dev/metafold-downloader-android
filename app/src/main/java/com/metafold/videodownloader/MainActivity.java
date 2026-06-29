@@ -4830,6 +4830,10 @@ public final class MainActivity extends Activity {
             showLicenseRequiredDialog();
             return;
         }
+        if (!needsLicenseRefresh()) {
+            approvedAction.run();
+            return;
+        }
         final String checkedEmail = email;
         setBusy(true, "Lisans doğrulanıyor...");
         licenseExecutor.execute(() -> {
@@ -4860,7 +4864,13 @@ public final class MainActivity extends Activity {
             } catch (Exception error) {
                 mainHandler.post(() -> {
                     setBusy(false, null);
-                    String message = cleanError(error);
+                    String message = cleanLicenseError(error);
+                    if (isLicenseActive()) {
+                        setStatus("Lisans sunucusuna ulaşılamadı. Kayıtlı aktif lisans ile devam ediliyor.", true);
+                        toast("Kayıtlı lisans ile devam ediliyor");
+                        approvedAction.run();
+                        return;
+                    }
                     outputView.setText(message);
                     setStatus("Lisans doğrulanamadı", false);
                     new AlertDialog.Builder(this)
@@ -5492,6 +5502,12 @@ public final class MainActivity extends Activity {
             request.addOption("-x");
             request.addOption("--audio-format", audioFormat);
             request.addOption("--audio-quality", "0");
+            return request;
+        }
+
+        String platform = detectPlatform(normalizeUrl(url));
+        if ("Pinterest".equals(platform)) {
+            request.addOption("-f", "best");
             return request;
         }
 
@@ -7937,6 +7953,7 @@ public final class MainActivity extends Activity {
             case "Facebook girişsiz yanıt vermedi. Video gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki Facebook ekranında giriş yapıp videoyu açarak tekrar deneyebilirsiniz.": return "Facebook did not respond without sign-in. The video may be private, restricted, or require session cookies. You can sign in from the Facebook screen inside the app, open the video, and try again.";
             case "Girişsiz indirme başarısız oldu. İçerik gizli, kısıtlı veya oturum çerezi istiyor olabilir. Uygulama içindeki platform ekranında giriş yapıp tekrar deneyebilirsiniz.": return "Download without sign-in failed. The content may be private, restricted, or require session cookies. You can sign in from the platform screen inside the app and try again.";
             case "YouTube sunucusuna ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.": return "Could not reach the YouTube server. Check your internet/DNS connection. If you use VPN, private DNS, or an ad blocker, turn it off and try again.";
+            case "Sunucuya ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.": return "Could not reach the server. Check your internet/DNS connection. If you use VPN, private DNS, or an ad blocker, turn it off and try again.";
             case "Ağ bağlantısı zaman aşımına uğradı. Bağlantıyı kontrol edip tekrar deneyin.": return "The network connection timed out. Check the connection and try again.";
             case "Kalite seçenekleri henüz alınmadı.": return "Quality options have not been loaded yet.";
             case "İndir": return "Download";
@@ -8196,6 +8213,9 @@ public final class MainActivity extends Activity {
             case "Lisans doğrulanıyor...": return "Verifying license...";
             case "Lisans etkin": return "License active";
             case "Lisans doğrulanamadı": return "License could not be verified";
+            case "Lisans sunucusuna ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.": return "Could not reach the license server. Check your internet/DNS connection. If you use VPN, private DNS, or an ad blocker, turn it off and try again.";
+            case "Lisans sunucusuna ulaşılamadı. Kayıtlı aktif lisans ile devam ediliyor.": return "Could not reach the license server. Continuing with the saved active license.";
+            case "Kayıtlı lisans ile devam ediliyor": return "Continuing with saved license";
             case "Lisans pasif": return "License inactive";
             case "Lisans bitiş tarihi geçersiz": return "Invalid license expiry date";
             case "Lisans s\u00fcresi sona erdi": return "License expired";
@@ -8598,10 +8618,26 @@ public final class MainActivity extends Activity {
                 || lower.contains("unable to download api page")
                 || lower.contains("transporterror")
                 || lower.contains("failed to resolve")) {
-            return "YouTube sunucusuna ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.";
+            return "Sunucuya ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.";
         }
         if (lower.contains("timed out") || lower.contains("connection reset") || lower.contains("network is unreachable")) {
             return "Ağ bağlantısı zaman aşımına uğradı. Bağlantıyı kontrol edip tekrar deneyin.";
+        }
+        return compactLine(cleaned, 1200);
+    }
+
+    private static String cleanLicenseError(Throwable error) {
+        String message = rawErrorText(error);
+        String cleaned = stripOutdatedWarning(message == null ? "Bilinmeyen hata" : message);
+        String lower = cleaned.toLowerCase(Locale.US);
+        if (lower.contains("no address associated with hostname")
+                || lower.contains("unable to download api page")
+                || lower.contains("transporterror")
+                || lower.contains("failed to resolve")
+                || lower.contains("timed out")
+                || lower.contains("connection reset")
+                || lower.contains("network is unreachable")) {
+            return "Lisans sunucusuna ulaşılamadı. İnternet/DNS bağlantısını kontrol edin. VPN, özel DNS veya reklam engelleyici kullanıyorsanız kapatıp tekrar deneyin.";
         }
         return compactLine(cleaned, 1200);
     }
