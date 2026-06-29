@@ -5501,10 +5501,10 @@ public final class MainActivity extends Activity {
             if (option.height > 0) {
                 request.addOption("-f", videoFormatFilter(option.height, videoFormat));
             } else {
-                request.addOption("-f", "bestvideo+bestaudio/best");
+                request.addOption("-f", bestVideoFormatFilter(videoFormat));
             }
         } else if (option.height > 0) {
-            request.addOption("-f", "best[height<=" + option.height + "]/best");
+            request.addOption("-f", "b[height<=" + option.height + "]/bv*+ba/b");
         } else {
             request.addOption("-f", "best");
         }
@@ -5519,6 +5519,10 @@ public final class MainActivity extends Activity {
         if ("Instagram".equals(platform)) {
             request.addOption("--add-header", "Referer:https://www.instagram.com/");
             request.addOption("--add-header", "Origin:https://www.instagram.com");
+            request.addOption("--add-header", "User-Agent:" + mobileBrowserUserAgent());
+        } else if ("Pinterest".equals(platform)) {
+            request.addOption("--add-header", "Referer:https://www.pinterest.com/");
+            request.addOption("--add-header", "Origin:https://www.pinterest.com");
             request.addOption("--add-header", "User-Agent:" + mobileBrowserUserAgent());
         }
     }
@@ -8450,9 +8454,16 @@ public final class MainActivity extends Activity {
     private static String videoFormatFilter(int height, String container) {
         String heightFilter = "[height<=" + height + "]";
         if ("webm".equals(container)) {
-            return "bestvideo" + heightFilter + "[ext=webm]+bestaudio[ext=webm]/best" + heightFilter + "[ext=webm]/best" + heightFilter + "/best";
+            return "bv*" + heightFilter + "[ext=webm]+ba/b" + heightFilter + "[ext=webm]/bv*" + heightFilter + "+ba/b" + heightFilter + "/b";
         }
-        return "bestvideo" + heightFilter + "[ext=mp4]+bestaudio[ext=m4a]/best" + heightFilter + "[ext=mp4]/best" + heightFilter + "/best";
+        return "bv*" + heightFilter + "[ext=mp4]+ba/b" + heightFilter + "[ext=mp4]/bv*" + heightFilter + "+ba/b" + heightFilter + "/b";
+    }
+
+    private static String bestVideoFormatFilter(String container) {
+        if ("webm".equals(container)) {
+            return "bv*[ext=webm]+ba/b[ext=webm]/bv*+ba/b";
+        }
+        return "bv*[ext=mp4]+ba/b[ext=mp4]/bv*+ba/b";
     }
 
     private static String languageName(String language) {
