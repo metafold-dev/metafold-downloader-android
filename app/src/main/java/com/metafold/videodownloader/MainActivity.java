@@ -2063,6 +2063,31 @@ public final class MainActivity extends Activity {
         site.setOnClickListener(v -> openWebsite("https://www.metafold.net"));
         panel.addView(site);
 
+        TextView socialTitle = textView("Sosyal medya", 15, Color.rgb(96, 112, 106), true);
+        socialTitle.setPadding(0, dp(16), 0, dp(8));
+        panel.addView(socialTitle);
+
+        LinearLayout socialRow = new LinearLayout(this);
+        socialRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button facebook = primaryButton("Facebook", Color.rgb(24, 119, 242));
+        facebook.setOnClickListener(v -> openWebsite("https://www.facebook.com/metafolderp"));
+        Button instagram = primaryButton("Instagram", Color.rgb(225, 48, 108));
+        instagram.setOnClickListener(v -> openWebsite("https://www.instagram.com/metafoldturkiye"));
+        Button youtube = primaryButton("YouTube", Color.rgb(220, 38, 38));
+        youtube.setOnClickListener(v -> openWebsite("https://www.youtube.com/@metafoldturkiye"));
+        socialRow.addView(facebook, rowWeight());
+        LinearLayout.LayoutParams instagramParams = rowWeight();
+        instagramParams.leftMargin = dp(8);
+        socialRow.addView(instagram, instagramParams);
+        LinearLayout.LayoutParams youtubeParams = rowWeight();
+        youtubeParams.leftMargin = dp(8);
+        socialRow.addView(youtube, youtubeParams);
+        panel.addView(socialRow, matchWrap());
+
+        TextView socialAccounts = textView("Facebook: metafolderp · Instagram: metafoldturkiye · YouTube: metafoldturkiye", 12, Color.rgb(96, 112, 106), false);
+        socialAccounts.setPadding(0, dp(8), 0, 0);
+        panel.addView(socialAccounts);
+
         Button coffee = primaryButton("Geliştiriciye kahve ısmarla", theme.accentColor);
         coffee.setOnClickListener(v -> showDonationDialog());
         LinearLayout.LayoutParams coffeeParams = matchWrap();
@@ -4850,20 +4875,60 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isLicenseActive() {
-        return !LICENSE_REQUIRED || (LICENSE_STATUS_ACTIVE.equals(getString(PREF_LICENSE_STATUS, "")) && !isLicenseExpired(getString(PREF_LICENSE_EXPIRES_AT, "")));
+        if (!LICENSE_REQUIRED) {
+            return true;
+        }
+        String expiresAt = getString(PREF_LICENSE_EXPIRES_AT, "");
+        return LICENSE_STATUS_ACTIVE.equals(getString(PREF_LICENSE_STATUS, ""))
+                && !isLicenseExpiryInvalid(expiresAt)
+                && !isLicenseExpired(expiresAt);
     }
 
     private void showLicenseRequiredDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle(ui("Onay gerekli"))
-                .setMessage(ui("Bu özelliği kullanmak için e-posta ile kayıt olunmalı ve yönetici onayı verilmelidir."))
-                .setPositiveButton(ui("Onay durumunu kontrol et"), (dialog, which) -> {
-                    openLicenseSettings();
-                    validateLicense(false, settingsPanel);
-                })
-                .setNeutralButton(ui("Lisans ekranı"), (dialog, which) -> openLicenseSettings())
-                .setNegativeButton(ui("Vazgeç"), null)
-                .show();
+        String status = getString(PREF_LICENSE_STATUS, "");
+        String expiresAt = getString(PREF_LICENSE_EXPIRES_AT, "");
+        boolean expiryInvalid = !TextUtils.isEmpty(expiresAt) && isLicenseExpiryInvalid(expiresAt);
+        boolean expired = !TextUtils.isEmpty(expiresAt) && isLicenseExpired(expiresAt);
+        boolean canBuy = false;
+        String title = "Onay gerekli";
+        String message = "Bu \u00f6zelli\u011fi kullanmak i\u00e7in e-posta ile kay\u0131t olunmal\u0131 ve y\u00f6netici onay\u0131 verilmelidir.";
+
+        if (expiryInvalid) {
+            title = "Lisans biti\u015f tarihi ge\u00e7ersiz";
+            message = "Bu lisans\u0131n biti\u015f tarihi okunamad\u0131. L\u00fctfen lisans ekran\u0131ndan onay durumunu kontrol edin veya y\u00f6netici ile g\u00f6r\u00fc\u015f\u00fcn.";
+        } else if (expired) {
+            title = "Lisans s\u00fcresi sona erdi";
+            message = "Bu lisans\u0131n s\u00fcresi " + expiresAt + " tarihinde sona erdi. Devam etmek i\u00e7in lisans\u0131n\u0131z\u0131 yenileyin.";
+            canBuy = true;
+        } else if (LICENSE_STATUS_DEVICE_LOCKED.equals(status)) {
+            title = "Bu lisans ba\u015fka cihaza ba\u011fl\u0131";
+            long nextChange = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getLong(PREF_LICENSE_NEXT_DEVICE_CHANGE, 0L);
+            message = nextChange > 0
+                    ? "Bu lisans ba\u015fka bir cihaza ba\u011fl\u0131. Cihaz de\u011fi\u015fimi " + formatDateTime(nextChange) + " sonras\u0131nda yap\u0131labilir."
+                    : "Bu lisans ba\u015fka bir cihaza ba\u011fl\u0131. Lisans ekran\u0131ndan onay durumunu kontrol edin.";
+        } else if (LICENSE_STATUS_INACTIVE.equals(status)) {
+            title = "Lisans pasif";
+            message = "Bu hesab\u0131n lisans\u0131 \u015fu anda aktif de\u011fil. Devam etmek i\u00e7in lisans\u0131n\u0131z\u0131 yenileyin veya y\u00f6netici onay\u0131 bekleyin.";
+            canBuy = true;
+        } else if (LICENSE_STATUS_PENDING.equals(status)) {
+            title = "Onay bekleniyor";
+            message = "Kay\u0131t iste\u011finiz al\u0131nd\u0131. Y\u00f6netici onay\u0131ndan sonra indirme \u00f6zellikleri a\u00e7\u0131l\u0131r.";
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(ui(title))
+                .setMessage(ui(message))
+                .setNeutralButton(ui("Lisans ekran\u0131"), (dialog, which) -> openLicenseSettings())
+                .setNegativeButton(ui("Vazge\u00e7"), null);
+        if (canBuy) {
+            builder.setPositiveButton(ui("Lisans sat\u0131n al"), (dialog, which) -> openWhatsAppLicensePurchase(getString(PREF_LICENSE_EMAIL, "")));
+        } else {
+            builder.setPositiveButton(ui("Onay durumunu kontrol et"), (dialog, which) -> {
+                openLicenseSettings();
+                validateLicense(false, settingsPanel);
+            });
+        }
+        builder.show();
     }
 
     private void openLicenseSettings() {
@@ -7809,6 +7874,13 @@ public final class MainActivity extends Activity {
         if (value.startsWith("Lisans bitiş tarihi geçersiz - ")) {
             return value.replace("Lisans bitiş tarihi geçersiz - ", "Invalid license expiry date - ");
         }
+        if (value.startsWith("Lisans s\u00fcresi doldu - ")) {
+            return value.replace("Lisans s\u00fcresi doldu - ", "License expired - ");
+        }
+        if (value.startsWith("Bu lisans\u0131n s\u00fcresi ")) {
+            return value.replace("Bu lisans\u0131n s\u00fcresi ", "This license expired on ")
+                    .replace(" tarihinde sona erdi. Devam etmek i\u00e7in lisans\u0131n\u0131z\u0131 yenileyin.", ". Renew your license to continue.");
+        }
         if (value.startsWith("Geçersiz tarih - ")) {
             return value.replace("Geçersiz tarih - ", "Invalid date - ");
         }
@@ -7888,6 +7960,7 @@ public final class MainActivity extends Activity {
             case "Kalite, dil, görünüm ve bildirimler": return "Quality, language, appearance, and notifications";
             case "Hakkında": return "About";
             case "Ahmet Doğan ve MetaFold bilgileri": return "Ahmet Doğan and MetaFold info";
+            case "Sosyal medya": return "Social media";
             case "Geliştiriciye kahve ısmarla": return "Buy the developer a coffee";
             case "IBAN kopyala": return "Copy IBAN";
             case "IBAN kopyalandı": return "IBAN copied";
@@ -8121,6 +8194,10 @@ public final class MainActivity extends Activity {
             case "Lisans doğrulanamadı": return "License could not be verified";
             case "Lisans pasif": return "License inactive";
             case "Lisans bitiş tarihi geçersiz": return "Invalid license expiry date";
+            case "Lisans s\u00fcresi sona erdi": return "License expired";
+            case "Bu lisans\u0131n biti\u015f tarihi okunamad\u0131. L\u00fctfen lisans ekran\u0131ndan onay durumunu kontrol edin veya y\u00f6netici ile g\u00f6r\u00fc\u015f\u00fcn.": return "This license expiry date could not be read. Check the approval status from the license screen or contact the administrator.";
+            case "Bu lisans ba\u015fka bir cihaza ba\u011fl\u0131. Lisans ekran\u0131ndan onay durumunu kontrol edin.": return "This license is bound to another device. Check the approval status from the license screen.";
+            case "Bu hesab\u0131n lisans\u0131 \u015fu anda aktif de\u011fil. Devam etmek i\u00e7in lisans\u0131n\u0131z\u0131 yenileyin veya y\u00f6netici onay\u0131 bekleyin.": return "This account's license is not active right now. Renew your license or wait for administrator approval to continue.";
             case "Firebase ayarı eksik": return "Firebase setting missing";
             case "Spark plan lisans sistemi için Firebase Web API Key uygulamaya eklenmeli.": return "Add the Firebase Web API Key to the app for the Spark plan license system.";
             case "Etkin": return "Active";
